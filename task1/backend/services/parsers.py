@@ -32,14 +32,19 @@ def parse_youtube(url: str):
     if not video_id:
         raise ValueError("Invalid YouTube URL")
         
-    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-    # Group transcript into slightly larger semantic blocks (e.g., ~30 seconds)
-    return [{"text": entry['text'], "metadata": {"timestamp": round(entry['start'])}} for entry in transcript]
+    ytt_api = YouTubeTranscriptApi()
+    transcript = ytt_api.fetch(video_id)
+    
+    # FIXED: Use dot notation (.text and .start) instead of dictionary brackets
+    return [{"text": entry.text, "metadata": {"timestamp": round(entry.start)}} for entry in transcript]
 
 def parse_webpage(url: str):
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
     soup = BeautifulSoup(response.text, 'html.parser')
+    
     for script in soup(["script", "style", "nav", "footer"]):
         script.extract()
+        
     text = soup.get_text(separator='\n', strip=True)
-    return [{"text": text, "metadata": {"source": url}}]
+    
+    return [{"text": text, "metadata": {"source_name": url}}]

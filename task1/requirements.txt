@@ -12,3 +12,5 @@ youtube-transcript-api
 beautifulsoup4
 #pip install "httpx==0.27.2"
 #pip install python-multipart
+#pip install google-generativeai
+#npm install -D env-cmd
