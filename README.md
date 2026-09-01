@@ -73,7 +73,7 @@ GROQ_API_KEY=your_groq_api_key
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
 # Optional: GEMINI_API_KEY=your_gemini_key (for embedding fallback)
-
+```
 ---
 
 ### 2. Backend Setup
@@ -84,12 +84,12 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
+```
 ## Start the FastAPI server:
 
 ```bash
 uvicorn main:app --reload --port 8000
-
+```
 ---
 
 ## 3. Frontend Setup
@@ -98,13 +98,13 @@ Navigate to the frontend folder and install dependencies:
 ```bash
 cd frontend
 npm install
-
+```
 ## Start the development server:
 
 ```bash
 npm run dev
 The application will be available at http://localhost:3000.
-
+```
 ### Usage Guide
 - Upload Sources: Use the upload panel to add PDFs, modern PPTX files, YouTube URLs, or Webpage links.
 
