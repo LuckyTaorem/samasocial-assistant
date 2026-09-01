@@ -8,8 +8,10 @@ def chunk_documents(parsed_docs, chunk_size=800, overlap=150):
         while start < len(text):
             end = start + chunk_size
             chunk_text = text[start:end]
-            # Only add meaningful chunks
-            if len(chunk_text.strip()) > 20: 
+            
+            # --- FIX: Lowered threshold from 20 to 3 ---
+            # This ensures short slide titles like "Image Section" are saved to the database
+            if len(chunk_text.strip()) > 3: 
                 chunks.append({
                     "content": chunk_text.strip(),
                     "metadata": metadata

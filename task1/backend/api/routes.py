@@ -64,28 +64,29 @@ async def upload_file(file: UploadFile):
             result = process_and_store("pdf", file.filename, docs, download_url)
         elif file_ext in ["ppt", "pptx"]:
             if file_ext == "ppt":
+                # Cleanly reject binary .ppt files to protect server RAM
                 raise HTTPException(
                     status_code=400, 
-                    detail="Legacy .ppt files are not supported. Please open the file in PowerPoint and 'Save As' a .pptx file."
+                    detail="Legacy .ppt files are not supported. Please open the file in PowerPoint and 'Save As' a modern .pptx file."
                 )
-
-            from backend.services.ingestion import extract_ppt_text
-            raw_text = extract_ppt_text(file_bytes)
+            docs = parse_pptx(file_bytes)
             
-            if not raw_text:
+            if not docs:
                 raise HTTPException(
                     status_code=400, 
                     detail="No text could be extracted. Make sure the slides contain actual text, not just images."
                 )
                 
-            docs = [{"text": raw_text, "metadata": {"source": file.filename, "type": "presentation"}}]
             result = process_and_store("pptx", file.filename, docs, download_url)
             
             if not result.get("summary") or str(result.get("summary")).strip() == "":
-                result["summary"] = "Presentation processed successfully. (Detailed summary could not be generated, likely due to sparse text or image-heavy slides)."
+                result["summary"] = "Presentation processed successfully."
         
         return {"status": "success", "data": result}
 
+    # --- FIX: Prevent 400 errors from turning into 500 errors ---
+    except HTTPException:
+        raise  
     except Exception as e:
         print(f"\n--- UPLOAD ERROR ---")
         traceback.print_exc()
@@ -138,10 +139,29 @@ async def get_chat_context(req: ChatRequest):
         if not chunks:
             context_text = "No relevant documents found."
         else:
-            context_text = "\n\n".join([
-                f"[Source Name: {c.get('metadata', {}).get('source_name', 'Unknown')}]\n{c['content']}" 
-                for c in chunks
-            ])
+            # Sync the metadata formatting logic here too
+            formatted_chunks = []
+            for c in chunks:
+                meta = c.get('metadata', {})
+                source_name = meta.get('source_name', 'Unknown')
+                
+                location = ""
+                if 'page' in meta:
+                    location = f", Page {meta['page']}"
+                elif 'slide' in meta:
+                    location = f", Slide {meta['slide']}"
+                elif 'timestamp' in meta:
+                    ts = int(meta['timestamp'])
+                    mins, secs = divmod(ts, 60)
+                    hours, mins = divmod(mins, 60)
+                    if hours > 0:
+                        location = f", Timestamp {hours}:{mins:02d}:{secs:02d}"
+                    else:
+                        location = f", Timestamp {mins}:{secs:02d}"
+                
+                formatted_chunks.append(f"[Source: {source_name}{location}]\n{c['content']}")
+                
+            context_text = "\n\n".join(formatted_chunks)
             
         return {"status": "success", "context": context_text}
     except Exception as e:

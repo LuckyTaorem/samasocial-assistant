@@ -109,6 +109,12 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
       method: "POST",
       body: formData,
     });
+
+    // --- FIX: Intercept HTTP errors from the backend so the UI shows the real issue ---
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(`${res.status}: ${errorData.detail || "Failed to process link"}`);
+    }
     const data = await res.json();
     
     // --- FIX: Apply the same bulletproof extraction here ---
@@ -128,6 +134,7 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
   } finally {
     setLoading(false);
     setStatus("");
+    setProgress(0);
   }
 };
 

@@ -16,17 +16,33 @@ def search_similar_chunks(query: str, match_threshold: float = 0.0, match_count:
         ).execute()
         
         chunks = response.data or []
-        
-        # Strictly isolate chunks to ONLY the documents active in this chat session
-        if active_sources:
+
+        # 3. If vector search returned nothing or filtering is too strict, grab chunks directly from active sources
+        if not chunks and active_sources:
             doc_res = supabase.table("documents").select("id, source_path").in_("source_path", active_sources).execute()
-            allowed_doc_ids = {str(d["id"]) for d in (doc_res.data or [])}
+            doc_ids = [d["id"] for d in doc_res.data] if doc_res.data else []
+            if doc_ids:
+                chunk_res = supabase.table("document_chunks").select("content, metadata, document_id").in_("document_id", doc_ids).limit(15).execute()
+                chunks = chunk_res.data or []
+        
+        # 4. Flexible source isolation filter
+        if active_sources and chunks:
+            doc_res = supabase.table("documents").select("id, source_path").in_("source_path", active_sources).execute()
+            allowed_doc_ids = {str(d["id"]) for d in (doc_res.data or [] )}
             
-            chunks = [
-                c for c in chunks 
-                if str(c.get("document_id")) in allowed_doc_ids or c.get("metadata", {}).get("source_name") in active_sources
-            ]
+            filtered_chunks = []
+            for c in chunks:
+                doc_id = str(c.get("document_id", ""))
+                source_name = c.get("metadata", {}).get("source_name", "")
+                
+                # Match either by document ID, source_name metadata, or if no filter metadata exists (fallback)
+                if doc_id in allowed_doc_ids or source_name in active_sources or not source_name:
+                    filtered_chunks.append(c)
             
+            # If filtering accidentally wiped out everything, keep the raw chunks to prevent out-of-scope errors
+            if filtered_chunks:
+                chunks = filtered_chunks
+
         return chunks[:match_count]
         
     except Exception as e:

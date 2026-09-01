@@ -1,29 +1,55 @@
 import io
 import requests
-import pdfplumber
 from pptx import Presentation
 from youtube_transcript_api import YouTubeTranscriptApi
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
 from fastapi import HTTPException
+import PyPDF2
 
-def parse_pdf(file_bytes: bytes):
+def parse_pdf(file_bytes):
+    reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
     docs = []
-    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text()
-            if text:
-                docs.append({"text": text, "metadata": {"page": i + 1}})
+    
+    # Loop through each page independently to preserve correct page numbering
+    for i, page in enumerate(reader.pages):
+        page_text = page.extract_text()
+        
+        if page_text and page_text.strip():
+            docs.append({
+                "text": page_text.strip(),
+                "metadata": {
+                    "page": i + 1,
+                    "type": "pdf"
+                }
+            })
+            
     return docs
 
-def parse_pptx(file_bytes: bytes):
-    docs = []
+def parse_pptx(file_bytes):
     prs = Presentation(io.BytesIO(file_bytes))
+    print(f"Total slides found in presentation: {len(prs.slides)}")
+    docs = []
+    
+    # Loop through each slide independently to preserve correct slide numbering
     for i, slide in enumerate(prs.slides):
-        text_blocks = [shape.text for shape in slide.shapes if hasattr(shape, "text")]
-        text = "\n".join(text_blocks).strip()
-        if text:
-            docs.append({"text": text, "metadata": {"slide": i + 1}})
+        slide_text = ""
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for paragraph in shape.text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        slide_text += run.text + " "
+                    slide_text += "\n"
+        
+        slide_text = slide_text.strip()
+        if slide_text:
+            docs.append({
+                "text": slide_text,
+                "metadata": {
+                    "slide": i + 1,
+                    "type": "presentation"
+                }
+            })
     return docs
 
 def parse_youtube(url: str):

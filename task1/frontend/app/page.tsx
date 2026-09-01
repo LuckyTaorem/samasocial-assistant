@@ -101,6 +101,18 @@ export default function Home() {
   }, [activeSessionId]);
 
   const createNewSession = () => {
+    if (sessions.length > 0) {
+      const topSession = sessions[0];
+      // If the top session has no messages and no sources, just switch to it and stop
+      if (topSession.messages.length === 0 && topSession.sources.length === 0) {
+        setActiveSessionId(topSession.id);
+        setSources([]);
+        setQuiz(null);
+        setAnswers({});
+        setShowResults(false);
+        return;
+      }
+    }
     const newSession = {
       id: Date.now().toString(),
       title: `New Chat ${sessions.length + 1}`,

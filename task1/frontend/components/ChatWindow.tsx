@@ -43,8 +43,8 @@ export default function ChatWindow({
     if (messages.length > 0) onMessagesChange(messages);
   }, [messages]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSend = async (e?: React.FormEvent<HTMLFormElement>) => {
+    if (e) e.preventDefault();
     if (!input.trim()) return;
 
     // --- NEW: Generate AI Title on the very first message ---
@@ -169,6 +169,16 @@ User Query: ${userMsg.content}`;
     }
   };
 
+  // Catch the Enter key
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault(); // Stop it from going to a new line
+      if (input.trim() && !isTyping) {
+        handleSend();
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-[500px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -195,7 +205,7 @@ User Query: ${userMsg.content}`;
                     <div className="w-1.5 h-1.5 bg-gray-400 dark:bg-gray-400 rounded-full animate-bounce"></div>
                   </div>
                 ) : msg.role === "user" ? (
-                  msg.content
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
                 ) : (
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {msg.content}
@@ -209,19 +219,19 @@ User Query: ${userMsg.content}`;
       </div>
 
       {/* --- ADDED DARK MODE CLASSES TO INPUT AREA --- */}
-      <form onSubmit={handleSend} className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-lg flex gap-2">
-        <input
-          type="text"
+      <form onSubmit={handleSend} className="p-3 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-lg flex gap-2 items-end">
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder="Ask a question about your sources..."
-          className="flex-1 px-4 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+          className="flex-1 px-4 py-3 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 resize-none overflow-hidden"
           disabled={isTyping}
         />
         <button 
           type="submit" 
           disabled={!input.trim() || isTyping}
-          className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="bg-blue-600 text-white p-3 rounded-full hover:bg-blue-700 disabled:opacity-50 transition-colors mb-0.5"
         >
           <Send size={18} />
         </button>
