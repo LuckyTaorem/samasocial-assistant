@@ -63,22 +63,28 @@ class CloudEmbeddings:
             texts = [texts]
 
         try:
-            # Use Google Gemini exclusively
+            # 1. SDK Workaround: Wrap each text chunk so the SDK correctly processes it as a batch
+            formatted_contents = [
+                types.Content(parts=[types.Part.from_text(text=t)]) 
+                for t in texts
+            ]
+            
             response = gemini_client.models.embed_content(
-                model="text-embedding-004", 
-                contents=texts,
+                model="text-embedding-001", 
+                contents=formatted_contents,
                 config=types.EmbedContentConfig(output_dimensionality=384) 
             )
             
             class EmbeddingResult:
                 def tolist(self):
-                    return [embedding.values for embedding in response.embeddings]
+                    return [emb.values for emb in response.embeddings]
                     
             return EmbeddingResult()
             
         except Exception as e:
             print(f"Gemini embedding failed: {e}")
-            raise Exception("Cloud embedding API failed to process the text.")
+            # 2. Expose the actual Google error to the frontend for easier debugging
+            raise Exception(f"Gemini API Error: {str(e)}")
 
 print("Loading Cloud embedding model...")
 embedding_model = CloudEmbeddings()
