@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "installCommand": "cd task1/frontend && npm install",
+  "buildCommand": "cd task1/frontend && npm run build",
+  "outputDirectory": "task1/frontend/.next"
+}
