@@ -11,11 +11,12 @@ The system leverages a hybrid approach of semantic vector search and pre-compute
 ---
 
 ## 📸 Screenshots
-*(Add your screenshots here)*
+<img width="1904" height="942" alt="Screenshot 2026-09-01 235814" src="https://github.com/user-attachments/assets/1d09fa07-0578-4d4e-927f-b8de485ec19c" />
+
 
 | Chat Interface | Quiz Mode | Source Management |
 |:---:|:---:|:---:|
-| `![Chat UI](link-to-image)` | `![Quiz UI](link-to-image)` | `![Sources UI](link-to-image)` |
+| <img width="600" height="500" alt="Screenshot 2026-09-02 000502" src="https://github.com/user-attachments/assets/66d314f3-9960-4be1-900d-7b0929ecd32d" /> | <img width="600" height="500" alt="Screenshot 2026-09-02 000359" src="https://github.com/user-attachments/assets/fe4d2696-06e3-4533-815f-ea00bedcc9de" /> | <img width="600" height="500" alt="Screenshot 2026-09-02 000131" src="https://github.com/user-attachments/assets/152d05a6-24ba-49f9-8af8-dff77247467f" /> |
 
 ---
 
