@@ -149,7 +149,7 @@ export default function Home() {
       let currentSources = [...sources];
 
       try {
-        const syncRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/documents/summaries`, {
+        const syncRes = await fetch(`${process.env.API_URL}/api/documents/summaries`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_ids: sourceIds })
@@ -270,7 +270,7 @@ STRICT RULES:
 
   const handleDeleteSource = async (id: string, index: number) => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/documents/${id}`, { method: "DELETE" });
+      await fetch(`${process.env.API_URL}/api/documents/${id}`, { method: "DELETE" });
       
       const updatedSources = sources.filter((_, i) => i !== index);
       setSources(updatedSources);
