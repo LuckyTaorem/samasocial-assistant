@@ -31,7 +31,7 @@ export default function SourceUploader({ onSourceAdded }: { onSourceAdded: (data
     formData.append("file", file);
 
     try {
-      const res = await fetch(`${process.env.API_URL}/api/upload/file`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload/file`, {
         method: "POST",
         body: formData,
       });
@@ -103,7 +103,7 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
   formData.append("url", url);
 
   try {
-    const res = await fetch(`${process.env.API_URL}/api/upload/link`, {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload/link`, {
       method: "POST",
       body: formData,
     });
