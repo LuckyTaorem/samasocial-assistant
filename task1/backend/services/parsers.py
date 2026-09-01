@@ -5,6 +5,7 @@ from pptx import Presentation
 from youtube_transcript_api import YouTubeTranscriptApi
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
+from fastapi import HTTPException
 
 def parse_pdf(file_bytes: bytes):
     docs = []
@@ -30,10 +31,29 @@ def parse_youtube(url: str):
     video_id = query.path[1:] if query.hostname == 'youtu.be' else parse_qs(query.query).get('v', [None])[0]
     
     if not video_id:
-        raise ValueError("Invalid YouTube URL")
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
         
-    ytt_api = YouTubeTranscriptApi()
-    transcript = ytt_api.fetch(video_id)
+    try:
+        ytt_api = YouTubeTranscriptApi()
+        transcript = ytt_api.fetch(video_id)
+    except Exception as e:
+        # Catch specific scraping blocks and missing subtitles to prevent a 500 crash
+        err_type = str(type(e))
+        if "RequestBlocked" in err_type or "IPBlocked" in err_type:
+            raise HTTPException(
+                status_code=400, 
+                detail="YouTube blocked this server's IP address. Cloud hosting providers (like Render) are often blocked by YouTube's anti-bot systems."
+            )
+        elif "TranscriptsDisabled" in err_type or "NoTranscript" in err_type:
+            raise HTTPException(
+                status_code=400, 
+                detail="This YouTube video does not have transcripts or closed captions enabled."
+            )
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="Failed to fetch YouTube transcript. The video might be private or restricted."
+            )
     
     docs = []
     current_text = ""
