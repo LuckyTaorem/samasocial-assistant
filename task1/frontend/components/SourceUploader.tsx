@@ -11,6 +11,8 @@ export default function SourceUploader({ onSourceAdded }: { onSourceAdded: (data
   const [url, setUrl] = useState("");
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -31,7 +33,7 @@ export default function SourceUploader({ onSourceAdded }: { onSourceAdded: (data
     formData.append("file", file);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload/file`, {
+      const res = await fetch(`${API_URL}/api/upload/file`, {
         method: "POST",
         body: formData,
       });
@@ -103,7 +105,7 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
   formData.append("url", url);
 
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/upload/link`, {
+    const res = await fetch(`${API_URL}/api/upload/link`, {
       method: "POST",
       body: formData,
     });

@@ -24,6 +24,7 @@ export default function ChatWindow({
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Load messages when the session changes
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function ChatWindow({
 
     // --- NEW: Generate AI Title on the very first message ---
     if (messages.length === 0) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/title`, {
+      fetch(`${API_URL}/api/chat/title`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: input }),
@@ -72,7 +73,7 @@ export default function ChatWindow({
 
     try {
       // --- LAYER 1: Primary Streaming via Groq (Python Backend) ---
-      const groqRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat`, {
+      const groqRes = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -110,7 +111,7 @@ export default function ChatWindow({
       // --- LAYER 2: Fallback Streaming via Puter.js ---
       try {
         // 1. Fetch vector context since Puter doesn't know about our database
-        const ctxRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/context`, {
+        const ctxRes = await fetch(`${API_URL}/api/chat/context`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 

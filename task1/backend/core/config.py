@@ -1,4 +1,5 @@
 import os
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client, Client, ClientOptions
@@ -17,6 +18,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 
 options = ClientOptions(postgrest_client_timeout=None)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=options)
@@ -27,20 +29,47 @@ class StackedEmbeddings:
     def __init__(self):
         # print("Loading local SentenceTransformer model as primary...")
         # self.local_model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("Loading Gemini Cloud API Embedder...")
+        print("Loading Stacked Cloud Embedder (HF Primary, Gemini Fallback)...")
 
     def encode(self, texts):
+
+        if isinstance(texts, str):
+            texts = [texts]
+
+        # --- TIER 1: Hugging Face Free API (Native 384 Dimensions) ---
+        if HUGGINGFACE_API_KEY:
+            try:
+                # Using the latest Hugging Face router API endpoint
+                api_url = "https://router.huggingface.co/hf-inference/models/sentence-transformers/all-MiniLM-L6-v2/pipeline/feature-extraction"
+                headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+                
+                # wait_for_model=True ensures it doesn't fail if the model is waking up
+                response = requests.post(
+                    api_url, 
+                    headers=headers, 
+                    json={"inputs": texts, "options": {"wait_for_model": True}}
+                )
+                
+                if response.status_code == 200:
+                    embeddings = response.json()
+                    
+                    class HFEmbeddingResult:
+                        def tolist(self):
+                            # Ensure it returns a list of lists even for single texts
+                            return embeddings if isinstance(embeddings[0], list) else [embeddings]
+                            
+                    return HFEmbeddingResult()
+                else:
+                    print(f"HF API skipped (Status {response.status_code}): {response.text}")
+            except Exception as e:
+                print(f"Hugging Face embedding failed: {e}")
         try:
-            # --- TIER 1: Local Embeddings (Instant, Zero Rate Limits) ---
-        #     return self.local_model.encode(texts)
-            
-        # except Exception as e:
-        #     print(f"Local embedding failed, trying Gemini fallback... ({e})")
-            
-            # --- TIER 2: Google Gemini Fallback ---
+            print("Falling back to Gemini API...")
+            formatted_contents = [types.Content(parts=[types.Part.from_text(text=t)]) for t in texts]
+
             response = gemini_client.models.embed_content(
                 model="gemini-embedding-001", 
-                contents=texts,
+                contents=formatted_contents,
                 config=types.EmbedContentConfig(output_dimensionality=384) 
             )
             
