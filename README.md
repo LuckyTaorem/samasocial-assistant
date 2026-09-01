@@ -4,9 +4,9 @@
 **Role:** AI/Full-Stack Developer Applicant  
 
 ## Overview
-This repository contains the implementation for **Task 1** of the Samasocial Technical Assignment[cite: 6]. It is a web-based AI learning assistant designed to process diverse knowledge sources (PDFs, PPTXs, YouTube videos, and Webpages) and provide accurate, strictly grounded answers with precise citations[cite: 6]. 
+This repository contains the implementation for **Task 1** of the Samasocial Technical Assignment. It is a web-based AI learning assistant designed to process diverse knowledge sources (PDFs, PPTXs, YouTube videos, and Webpages) and provide accurate, strictly grounded answers with precise citations. 
 
-The system leverages a hybrid approach of semantic vector search and pre-computed document summaries to ensure high-quality retrieval without exceeding LLM context limits[cite: 6].
+The system leverages a hybrid approach of semantic vector search and pre-computed document summaries to ensure high-quality retrieval without exceeding LLM context limits.
 
 ---
 
@@ -23,17 +23,17 @@ The system leverages a hybrid approach of semantic vector search and pre-compute
 ## ✨ Features & Assignment Checklist
 
 ### Core Functionality
-- [x] **Multi-Source Ingestion:** Supports PDF, PPTX, YouTube URLs, and public Webpages[cite: 6].
-- [x] **Strict Grounding & Hallucination Prevention:** The AI answers strictly based on uploaded context and gracefully declines out-of-scope questions[cite: 6].
-- [x] **Granular Citations:** Answers include exact source locators (e.g., `[Source: document.pdf, Page 4]`, `[Source: presentation.pptx, Slide 2]`)[cite: 6].
-- [x] **Deep-Linked Timestamps:** YouTube citations include clickable timestamps that jump directly to the referenced moment in the video[cite: 6].
-- [x] **Streaming Responses:** The LLM streams responses token-by-token for a fast, real-time feel[cite: 6].
-- [x] **Session Memory:** Multi-turn conversational memory allows for follow-up questions and cross-referencing[cite: 6].
+- [x] **Multi-Source Ingestion:** Supports PDF, PPTX, YouTube URLs, and public Webpages.
+- [x] **Strict Grounding & Hallucination Prevention:** The AI answers strictly based on uploaded context and gracefully declines out-of-scope questions.
+- [x] **Granular Citations:** Answers include exact source locators (e.g., `[Source: document.pdf, Page 4]`, `[Source: presentation.pptx, Slide 2]`).
+- [x] **Deep-Linked Timestamps:** YouTube citations include clickable timestamps that jump directly to the referenced moment in the video.
+- [x] **Streaming Responses:** The LLM streams responses token-by-token for a fast, real-time feel.
+- [x] **Session Memory:** Multi-turn conversational memory allows for follow-up questions and cross-referencing.
 
 ### Bonus Features Implemented
-- [x] **Simultaneous Sources:** Users can chat with multiple mixed sources at the same time[cite: 6].
-- [x] **"Quiz Me" Mode:** Auto-generates 3 unique, non-repeating multiple-choice questions based strictly on the uploaded content summaries[cite: 6].
-- [x] **Document Summaries:** Generates and displays a short summary of each source upon successful ingestion[cite: 6].
+- [x] **Simultaneous Sources:** Users can chat with multiple mixed sources at the same time.
+- [x] **"Quiz Me" Mode:** Auto-generates 3 unique, non-repeating multiple-choice questions based strictly on the uploaded content summaries.
+- [x] **Document Summaries:** Generates and displays a short summary of each source upon successful ingestion.
 - [x] **Offline Resilience:** Includes a network listener and a robust fallback streaming mechanism (via Puter.js) if the primary Groq API fails.
 
 ---
@@ -52,7 +52,7 @@ The system leverages a hybrid approach of semantic vector search and pre-compute
 * **Embeddings:** Hugging Face (Primary) with Gemini API (Fallback).
 
 ### Parsing Strategies
-To ensure precise citations, files are parsed structurally rather than as bulk text[cite: 6]:
+To ensure precise citations, files are parsed structurally rather than as bulk text:
 * **PPTX (`python-pptx`):** Iterates slide-by-slide to inject `slide_number` metadata into the vector chunks.
 * **PDF (`PyPDF2`):** Iterates page-by-page to inject `page_number` metadata.
 * **YouTube (`youtube-transcript-api`):** Captures exact timestamps and formats them into deep-linked URL parameters.
