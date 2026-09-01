@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "env-cmd -f ../.env next dev",
-    "build": "env-cmd -f ../.env next build",
-    "start": "env-cmd -f ../.env next start",
-    "lint": "eslint"
-  },
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint"
+},
   "dependencies": {
     "@heyputer/puter.js": "^2.6.2",
     "@tailwindcss/typography": "^0.5.20",
