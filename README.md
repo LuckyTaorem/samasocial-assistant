@@ -86,27 +86,27 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
-## Start the FastAPI server:
+### Start the FastAPI server:
 
 ```bash
 uvicorn main:app --reload --port 8000
 ```
 ---
 
-## 3. Frontend Setup
+### 3. Frontend Setup
 Navigate to the frontend folder and install dependencies:
 
 ```bash
 cd frontend
 npm install
 ```
-## Start the development server:
+### Start the development server:
 
 ```bash
 npm run dev
 The application will be available at http://localhost:3000.
 ```
-### Usage Guide
+## Usage Guide
 - Upload Sources: Use the upload panel to add PDFs, modern PPTX files, YouTube URLs, or Webpage links.
 
 - Review Summaries: Expand the "Source Summaries" dropdown to read the high-level overview of your uploads.
