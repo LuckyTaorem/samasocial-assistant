@@ -7,13 +7,13 @@ client = AsyncGroq(api_key=GROQ_API_KEY)
 MODEL_NAME = "openai/gpt-oss-20b"
 
 async def generate_chat_response(query: str, session_history: list, active_sources: list):
-    chunks = search_similar_chunks(query, match_threshold=0.0)
+    chunks = search_similar_chunks(query, match_threshold=0.0, active_sources=active_sources)
     
     if not chunks:
-        context_text = "No relevant documents found."
+        context_text = "No relevant documents found in your active sources."
     else:
         context_text = "\n\n".join([
-            f"[Source Name: {c['metadata'].get('source_name', 'Unknown')}]\n{c['content']}" 
+            f"[Source Name: {c.get('metadata', {}).get('source_name', 'Unknown')}]\n{c['content']}" 
             for c in chunks
         ])
 

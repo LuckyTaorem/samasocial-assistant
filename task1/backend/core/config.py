@@ -23,21 +23,32 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY, options=options)
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-class GeminiEmbedder:
-    def encode(self, texts):
-        response = gemini_client.models.embed_content(
-            model="gemini-embedding-001", 
-            contents=texts,
-            config=types.EmbedContentConfig(output_dimensionality=384) 
-        )
-        
-        class EmbeddingResult:
-            def tolist(self):
-                # Extract the float arrays from the new response object
-                return [embedding.values for embedding in response.embeddings]
-                
-        return EmbeddingResult()
+class StackedEmbeddings:
+    def __init__(self):
+        print("Loading local SentenceTransformer model as primary...")
+        self.local_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-print("Loading Gemini embedding model...")
-embedding_model = GeminiEmbedder()
+    def encode(self, texts):
+        try:
+            # --- TIER 1: Local Embeddings (Instant, Zero Rate Limits) ---
+            return self.local_model.encode(texts)
+            
+        except Exception as e:
+            print(f"Local embedding failed, trying Gemini fallback... ({e})")
+            
+            # --- TIER 2: Google Gemini Fallback ---
+            response = gemini_client.models.embed_content(
+                model="gemini-embedding-001", 
+                contents=texts,
+                config=types.EmbedContentConfig(output_dimensionality=384) 
+            )
+            
+            class EmbeddingResult:
+                def tolist(self):
+                    return [embedding.values for embedding in response.embeddings]
+                    
+            return EmbeddingResult()
+
+print("Loading Stacked embedding model...")
+embedding_model = StackedEmbeddings()
 print("Model loaded.")

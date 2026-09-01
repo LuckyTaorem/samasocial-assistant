@@ -35,8 +35,30 @@ def parse_youtube(url: str):
     ytt_api = YouTubeTranscriptApi()
     transcript = ytt_api.fetch(video_id)
     
-    # FIXED: Use dot notation (.text and .start) instead of dictionary brackets
-    return [{"text": entry.text, "metadata": {"timestamp": round(entry.start)}} for entry in transcript]
+    docs = []
+    current_text = ""
+    current_timestamp = 0
+    
+    # Group raw caption lines into larger 800-character blocks
+    for entry in transcript:
+        if not current_text:
+            current_timestamp = round(entry.start)
+        current_text += " " + entry.text
+        
+        if len(current_text) > 800:
+            docs.append({
+                "text": current_text.strip(),
+                "metadata": {"timestamp": current_timestamp}
+            })
+            current_text = ""
+            
+    if current_text.strip():
+        docs.append({
+            "text": current_text.strip(),
+            "metadata": {"timestamp": current_timestamp}
+        })
+        
+    return docs
 
 def parse_webpage(url: str):
     response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})

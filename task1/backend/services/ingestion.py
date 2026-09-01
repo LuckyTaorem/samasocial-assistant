@@ -3,6 +3,8 @@ import re
 from backend.core.config import supabase, embedding_model, GROQ_API_KEY
 from backend.services.chunking import chunk_documents
 from groq import Groq
+import io
+from pptx import Presentation
 
 groq_client = Groq(api_key=GROQ_API_KEY)
 
@@ -22,8 +24,10 @@ def generate_summary(text_content: str) -> str:
             temperature=0.3,
             max_tokens=1000 
         )
+
+        raw_text = response.choices[0].message.content.strip()
         
-        clean_text = response.choices[0].message.content.strip()
+        clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
         
         if not clean_text:
             return "Summary generation was successful, but the AI returned an empty response."
@@ -33,6 +37,19 @@ def generate_summary(text_content: str) -> str:
     except Exception as e:
         print(f"Summary generation error: {e}")
         return "Failed to generate summary due to an API error."
+
+def extract_ppt_text(file_bytes: bytes) -> str:
+    try:
+        prs = Presentation(io.BytesIO(file_bytes))
+        text_chunks = []
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    text_chunks.append(shape.text.strip())
+        return "\n".join(text_chunks)
+    except Exception as e:
+        print(f"PPT Extraction Error: {e}")
+        return ""
 
 def process_and_store(source_type: str, source_path: str, parsed_docs: list, download_url: str = None):
     if not parsed_docs:

@@ -6,14 +6,25 @@ import { Upload, Link as LinkIcon, Loader2 } from "lucide-react";
 export default function SourceUploader({ onSourceAdded }: { onSourceAdded: (data: any) => void }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [url, setUrl] = useState("");
+  const [errorToast, setErrorToast] = useState<string | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // --- NEW: Trigger the animated progress bar for files ---
+    // --- NEW: 5MB File Size Limit Check ---
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+    if (file.size > MAX_FILE_SIZE) {
+      alert("File is too large! Please upload a document smaller than 5MB.");
+      
+      // --- FIX: Clear the input directly from the event target ---
+      e.target.value = ''; 
+      return; // Stop execution instantly
+    }
+
     startProgressTracker();
     
     const formData = new FormData();
@@ -24,15 +35,46 @@ export default function SourceUploader({ onSourceAdded }: { onSourceAdded: (data
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      onSourceAdded({ type: "file", name: file.name, ...data.data });
-    } catch (error) {
-      console.error("Upload failed", error);
+
+      // --- NEW: Intercept HTTP errors from the backend ---
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(`${res.status}: ${errorData.detail || "Upload failed"}`);
+      }
+
+      const responseData = await res.json();
+      
+      // --- FIX: Aggressively hunt for the data dictionary from Python ---
+      const doc = responseData?.data || responseData?.result || responseData || {};
+      
+      // Grab the real ID
+      const realId = doc.document_id || doc.id;
+      
+      if (!realId) {
+        console.error("CRITICAL WARNING: The backend did not return a document_id!", responseData);
+      }
+
+      // --- FIX: Explicitly map the summary and the real ID so they don't get lost ---
+      onSourceAdded({ 
+        id: realId || Date.now().toString(), 
+        type: "file", 
+        name: file.name, 
+        summary: doc.summary, 
+        ...doc 
+      });
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      setErrorToast(error.message);
+      setTimeout(() => setErrorToast(null), 4000);
+      
     } finally {
-      // --- NEW: Reset the loading state when finished ---
-      setLoading(false);
-      setStatus("");
-      setProgress(0);
+      setIsUploading(false);
+      // --- FIX: Add these two lines to kill the loading UI ---
+      setLoading(false); 
+      setStatus("");     
+      // ------------------------------------------------------
+      setProgress(100);
+      setTimeout(() => setProgress(0), 1000);
     }
   };
 
@@ -66,8 +108,18 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
       body: formData,
     });
     const data = await res.json();
-    // Pass the database ID back so we can delete it later
-    onSourceAdded({ id: data.data.document_id, type: "link", name: url, ...data.data });
+    
+    // --- FIX: Apply the same bulletproof extraction here ---
+    const payload = data?.data || data || {};
+    const doc = Array.isArray(payload) ? payload[0] : payload;
+
+    onSourceAdded({ 
+      id: doc?.id || doc?.document_id || Date.now().toString(), 
+      type: "link", 
+      name: url, 
+      ...doc 
+    });
+    
     setUrl("");
   } catch (error) {
     console.error("Link upload failed", error);
@@ -78,6 +130,14 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
 };
 
   return (
+    <div className="mb-6 relative">
+      {/* --- NEW: Error Toast Notification --- */}
+      {errorToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 rounded-full shadow-lg text-sm font-semibold text-white bg-red-500 animate-pulse flex items-center gap-2">
+          <span className="w-2 h-2 bg-white rounded-full animate-ping"></span>
+          {errorToast}
+        </div>
+      )}
     <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 mb-6 transition-colors">
       <h2 className="text-lg font-semibold mb-4">Add Knowledge Sources</h2>
       
@@ -87,9 +147,11 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
           <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
             <div className="flex flex-col items-center justify-center pt-5 pb-6">
               {loading ? <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-2" /> : <Upload className="w-8 h-8 text-gray-400 mb-2" />}
-              <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Upload PDF or PPTX</p>
+              {/* --- UPDATED: Label text --- */}
+              <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Upload PDF, PPT, or PPTX</p>
             </div>
-            <input type="file" className="hidden" accept=".pdf,.pptx" onChange={handleFileUpload} disabled={loading} />
+            {/* --- UPDATED: Added .ppt to the accept attribute --- */}
+            <input type="file" className="hidden" accept=".pdf,.ppt,.pptx" onChange={handleFileUpload} disabled={loading} />
           </label>
         </div>
 
@@ -132,6 +194,7 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

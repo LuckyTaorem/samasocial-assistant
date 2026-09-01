@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Send, User, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { puter } from '@heyputer/puter.js';
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -70,7 +71,8 @@ export default function ChatWindow({
     setMessages([...newMessages, { role: "assistant", content: "" }]);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat`, {
+      // --- LAYER 1: Primary Streaming via Groq (Python Backend) ---
+      const groqRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -80,32 +82,87 @@ export default function ChatWindow({
         }),
       });
 
-      if (!res.body) throw new Error("No response body");
+      if (!groqRes.ok || !groqRes.body) {
+        throw new Error("Groq API failed or returned empty body");
+      }
 
-      const reader = res.body.getReader();
+      const reader = groqRes.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let assistantResponse = "";
 
+      // Stream Groq response in real-time
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
-        const chunk = decoder.decode(value, { stream: true });
-        assistantResponse += chunk;
+        assistantResponse += decoder.decode(value, { stream: true });
         
-        // Update the last message in real-time
         setMessages((prev) => {
           const newMsgs = [...prev];
           newMsgs[newMsgs.length - 1].content = assistantResponse;
           return newMsgs;
         });
       }
-    } catch (error) {
-      console.error("Chat error:", error);
-      onMessagesChange([
-        ...newMessages,
-        { role: "assistant", content: "Sorry, something went wrong. Please check your connection and try again." }
-      ]);
+
+    } catch (groqError) {
+      console.warn("Groq failed, falling back to Puter.js...", groqError);
+      
+      // --- LAYER 2: Fallback Streaming via Puter.js ---
+      try {
+        // 1. Fetch vector context since Puter doesn't know about our database
+        const ctxRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/chat/context`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            query: userMsg.content, 
+            session_history: messages.slice(-4), 
+            active_sources: sources.map(s => s.name) 
+          })
+        });
+        
+        const ctxData = await ctxRes.json();
+        const contextText = ctxData.context || "No relevant documents found.";
+        const sourcesStr = sources.map(s => s.name).join(", ") || "None";
+
+        const prompt = `You are a helpful AI learning assistant. The user has currently uploaded the following active files/sources in their workspace: ${sourcesStr}.
+
+INSTRUCTIONS:
+1. If the user asks what sources, files, or documents are available or uploaded, directly list the active files mentioned above.
+2. For all other questions, answer using ONLY the provided CONTEXT below.
+3. If the answer cannot be found in the context or the active files list, you MUST politely decline by replying exactly with: 'I'm sorry, but that is out of scope of the provided material.'
+4. When you provide an answer based on the CONTEXT, you MUST make your citations highly visible. Append the source name at the end of the sentence like this: **[Source: filename.pdf]**.
+
+CONTEXT:
+${contextText}
+
+User Query: ${userMsg.content}`;
+
+        // 2. Use Claude 3.5 Sonnet on Puter, which guarantees smooth streaming
+        const stream = await puter.ai.chat(prompt, { 
+          model: "claude-3-5-sonnet", 
+          stream: true 
+        });
+
+        let assistantResponse = "";
+        
+        for await (const chunk of stream) {
+          const textChunk = typeof chunk === 'string' ? chunk : ((chunk as any)?.text || "");
+          assistantResponse += textChunk;
+          
+          setMessages((prev) => {
+            const newMsgs = [...prev];
+            newMsgs[newMsgs.length - 1].content = assistantResponse;
+            return newMsgs;
+          });
+        }
+      } catch (puterError) {
+        console.error("Both Groq and Puter failed:", puterError);
+        setMessages((prev) => {
+          const newMsgs = [...prev];
+          newMsgs[newMsgs.length - 1].content = "⚠️ Sorry, all AI providers are currently busy or unavailable. Please try again in a moment.";
+          return newMsgs;
+        });
+      }
     } finally {
       setIsTyping(false);
     }
