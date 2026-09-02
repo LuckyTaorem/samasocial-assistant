@@ -2,7 +2,7 @@ import uuid
 import sys
 import json
 import os
-from fastapi import Body, FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import Body, FastAPI, HTTPException, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from groq import Groq
@@ -304,18 +304,29 @@ async def chat_with_ai(
 # --- SESSION ENDPOINTS ---
 
 @app.get("/api/sessions")
-def list_sessions():
+def list_sessions(x_user_id: str = Header(None)):
     try:
-        res = supabase.table("sessions").select("*").order("created_at", desc=True).limit(20).execute()
+        # Only fetch sessions that match the browser's unique user_id
+        query = supabase.table("sessions").select("*")
+        if x_user_id:
+            query = query.eq("user_id", x_user_id)
+            
+        res = query.order("created_at", desc=True).limit(20).execute()
         return {"sessions": res.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/sessions")
-def create_session():
+def create_session(x_user_id: str = Header(None)):
     try:
         session_id = str(uuid.uuid4())
-        supabase.table("sessions").insert({"id": session_id}).execute()
+        insert_data = {"id": session_id}
+        
+        # Attach the browser's user_id to the new session
+        if x_user_id:
+            insert_data["user_id"] = x_user_id
+            
+        supabase.table("sessions").insert(insert_data).execute()
         return {"session_id": session_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

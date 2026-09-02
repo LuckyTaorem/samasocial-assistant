@@ -16,6 +16,18 @@ interface SessionItem {
   title?: string; // Add title here
 }
 
+const getUserId = () => {
+  if (typeof window !== "undefined") {
+    let uid = localStorage.getItem("course_planner_user_id");
+    if (!uid) {
+      uid = crypto.randomUUID(); // Generates a unique browser ID
+      localStorage.setItem("course_planner_user_id", uid);
+    }
+    return uid;
+  }
+  return "anonymous";
+};
+
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -32,10 +44,13 @@ export default function Home() {
     },
   ]);
 
-  // Fetch list of old sessions
   const fetchSessions = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sessions`);
+      const res = await fetch(`${API_URL}/api/sessions`, {
+        headers: {
+          "X-User-ID": getUserId(),
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setSessions(data.sessions || []);
@@ -107,7 +122,12 @@ useEffect(() => {
   const handleNewSession = async () => {
     setIsLoadingSession(true); // <-- Start loading animation
     try {
-      const res = await fetch(`${API_URL}/api/sessions`, { method: "POST" });
+      const res = await fetch(`${API_URL}/api/sessions`, { 
+        method: "POST",
+        headers: {
+          "X-User-ID": getUserId(), // Attach ID when creating
+        },
+      });
       const data = await res.json();
       const sid = data.session_id;
       window.history.replaceState({}, "", `?session=${sid}`);
