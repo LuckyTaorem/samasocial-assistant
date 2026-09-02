@@ -117,6 +117,7 @@ The application will be available at http://localhost:3000.
 
 - Manage Sessions: Use the left sidebar to create new chats or switch between previous sessions.
 
+---
 
 # Samasocial Technical Assignment - Task 2: AI Course Planning Assistant for Mentors
 
@@ -128,11 +129,12 @@ The system leverages structured data generation to ensure the final output is bo
 ---
 
 ## 📸 Screenshots
-*(Note: Add your Task 2 screenshots here)*
+<img width="1900" height="939" alt="image" src="https://github.com/user-attachments/assets/3debd406-8855-491c-b3e7-0622135b783e" />
+
 
 | Split-Panel Interface | Inline Editing | PDF Syllabus Import |
 |:---:|:---:|:---:|
-| <img src="link_to_split_panel_image" width="600" /> | <img src="link_to_inline_edit_image" width="600" /> | <img src="link_to_pdf_import_image" width="600" /> |
+| <img width="600" height="500" alt="image" src="https://github.com/user-attachments/assets/4bcb5438-9199-4940-b519-cda73c02306c" />| <img width="600" height="500" alt="image" src="https://github.com/user-attachments/assets/e7a2770a-1812-4d07-8689-03783aa1e7ff" /> | <img width="600" height="500" alt="image" src="https://github.com/user-attachments/assets/cb27a9ce-7993-4c77-b988-986ac1c957d5" /> |
 
 ---
 
