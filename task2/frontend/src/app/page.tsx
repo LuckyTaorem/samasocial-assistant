@@ -65,19 +65,28 @@ useEffect(() => {
     async function initSession() {
       setIsLoadingSession(true);
       try {
-        await fetchSessions();
+        // 1. Fetch available sessions for this specific user
+        const res = await fetch(`${API_URL}/api/sessions`, {
+          headers: { "X-User-ID": getUserId() },
+        });
+        const data = await res.json();
+        const userSessions = data.sessions || [];
+        setSessions(userSessions);
+
+        // 2. Check URL for an existing session ID
         const params = new URLSearchParams(window.location.search);
         let sid = params.get("session");
 
+        // 3. Try to load the session from the URL if it exists
         if (sid && sid !== "undefined" && sid !== "null") {
-          const res = await fetch(`${API_URL}/api/sessions/${sid}`);
-          if (res.ok) {
-            const data = await res.json();
+          const sessionRes = await fetch(`${API_URL}/api/sessions/${sid}`);
+          if (sessionRes.ok) {
+            const sessionData = await sessionRes.json();
             setSessionId(sid);
-            if (data.plan) setCoursePlan(data.plan);
-            if (data.messages && data.messages.length > 0) {
+            if (sessionData.plan) setCoursePlan(sessionData.plan);
+            if (sessionData.messages && sessionData.messages.length > 0) {
               setMessages(
-                data.messages.map((m: any) => ({
+                sessionData.messages.map((m: any) => ({
                   id: m.id,
                   sender: m.role,
                   text: m.content,
@@ -85,15 +94,21 @@ useEffect(() => {
                 }))
               );
             }
-            return; // Exit here if successful
+            return; // Successfully loaded URL session, exit early
           }
         }
-        // If no valid session ID was found, create one
-        await handleNewSession();
+
+        // 4. If URL session is missing/invalid, fallback to their most recent session
+        if (userSessions.length > 0) {
+          handleSelectSession(userSessions[0].id);
+        } else {
+          // 5. If they have zero sessions, create a brand new one
+          await handleNewSession();
+        }
+
       } catch (err) {
         console.error("Initialization error:", err);
       } finally {
-        // This guarantees the loading screen ALWAYS disappears
         setIsLoadingSession(false);
       }
     }
@@ -120,33 +135,40 @@ useEffect(() => {
 
   // Create a brand new session and reset UI
   const handleNewSession = async () => {
-    setIsLoadingSession(true); // <-- Start loading animation
+    setIsLoadingSession(true);
     try {
       const res = await fetch(`${API_URL}/api/sessions`, { 
         method: "POST",
-        headers: {
-          "X-User-ID": getUserId(), // Attach ID when creating
-        },
+        headers: { "X-User-ID": getUserId() },
       });
+      
+      if (!res.ok) {
+        throw new Error("Backend failed to create a session.");
+      }
+      
       const data = await res.json();
       const sid = data.session_id;
-      window.history.replaceState({}, "", `?session=${sid}`);
-      setSessionId(sid);
-      setCoursePlan(null);
-      setMessages([
-        {
-          id: "1",
-          sender: "assistant",
-          text: "Hello! I am your AI Course Planning Assistant. What subject would you like to build a course for?",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
-      await fetchSessions();
-      setIsSidebarOpen(false);
+      
+      // Safety check: Only update URL if the backend returned a valid ID
+      if (sid) {
+        window.history.replaceState({}, "", `?session=${sid}`);
+        setSessionId(sid);
+        setCoursePlan(null);
+        setMessages([
+          {
+            id: "1",
+            sender: "assistant",
+            text: "Hello! I am your AI Course Planning Assistant. What subject would you like to build a course for?",
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+        await fetchSessions();
+      }
     } catch (err) {
       console.error("Failed to create session", err);
     } finally {
-      setIsLoadingSession(false); // <-- Stop loading animation
+      setIsSidebarOpen(false);
+      setIsLoadingSession(false); 
     }
   };
 
