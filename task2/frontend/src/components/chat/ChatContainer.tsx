@@ -19,11 +19,17 @@ export default function ChatContainer({ sessionId, messages, setMessages, course
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSendMessage = async (text: string, file: File | null) => {
+
+    let displayMessage = text;
+    if (file) {
+      displayMessage = `📄 Attached: ${file.name}\n\n${text}`;
+    }
+    
     // 1. Add User Message immediately to UI
     const newUserMessage: Message = {
       id: Date.now().toString(),
       sender: "user",
-      text: text,
+      text: displayMessage,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     
@@ -64,11 +70,11 @@ export default function ChatContainer({ sessionId, messages, setMessages, course
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50 border-r border-gray-200">
-      <div className="px-4 py-3 bg-white border-b border-gray-200 shadow-sm">
-        <h2 className="text-md font-semibold text-gray-800">Course Intake</h2>
-        <p className="text-xs text-gray-500">Discuss your curriculum needs</p>
-      </div>
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 border-r border-slate-200/80 dark:border-slate-800 transition-colors">
+  <div className="px-4 py-3 bg-white dark:bg-slate-950 border-b border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors">
+    <h2 className="text-md font-semibold text-slate-800 dark:text-slate-100">Course Intake</h2>
+    <p className="text-xs text-slate-400 dark:text-slate-500">Discuss your curriculum needs</p>
+  </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         {messages.map((msg) => (

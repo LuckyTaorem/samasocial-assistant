@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@custom-variant dark (&:is(.dark *));
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   body {
@@ -40,4 +44,44 @@
 
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Base theme transitions */
+html, body {
+  @apply transition-colors duration-300;
+}
+
+/* Force base dark mode styling when the .dark class is applied to HTML */
+.dark body {
+  @apply bg-slate-900 text-slate-100;
+}
+
+@media print {
+  /* 1. Force ALL containers to expand and show overflowing content */
+  html, body, main, div, section, article {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  /* 1. Destroy the horizontal split-screen layout */
+  div[data-panel-group] {
+    display: block !important;
+    width: 100% !important;
+  }
+  
+  /* 2. Completely hide the Chat panel (first child) and the drag handle */
+  div[data-panel]:first-child,
+  div[data-panel-resize-handle] {
+    display: none !important;
+  }
+  
+  /* 3. Force the Course Preview panel (last child) to take 100% of the paper width */
+  div[data-panel]:last-child {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    overflow: visible !important;
+  }
 }

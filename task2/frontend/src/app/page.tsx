@@ -6,13 +6,14 @@ import ChatContainer from "@/components/chat/ChatContainer";
 import CoursePreview from "@/components/course/CoursePreview";
 import { CoursePlan } from "@/types/course";
 import { Message } from "@/types/chat";
-import { Menu, X, Plus, MessageSquare, Sparkles } from "lucide-react";
+import { Menu, X, Plus, MessageSquare, Sparkles, Sun, Moon, Trash2 } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 interface SessionItem {
   id: string;
   created_at: string;
+  title?: string; // Add title here
 }
 
 export default function Home() {
@@ -20,6 +21,8 @@ export default function Home() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [coursePlan, setCoursePlan] = useState<CoursePlan | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
@@ -43,14 +46,15 @@ export default function Home() {
   };
 
   // Initialize or load session from URL query params
-  useEffect(() => {
+useEffect(() => {
     async function initSession() {
-      await fetchSessions();
-      const params = new URLSearchParams(window.location.search);
-      let sid = params.get("session");
+      setIsLoadingSession(true);
+      try {
+        await fetchSessions();
+        const params = new URLSearchParams(window.location.search);
+        let sid = params.get("session");
 
-      if (sid && sid !== "undefined" && sid !== "null") {
-        try {
+        if (sid && sid !== "undefined" && sid !== "null") {
           const res = await fetch(`${API_URL}/api/sessions/${sid}`);
           if (res.ok) {
             const data = await res.json();
@@ -66,22 +70,42 @@ export default function Home() {
                 }))
               );
             }
-            return;
+            return; // Exit here if successful
           }
-        } catch (err) {
-          console.error("Could not load session, creating new one...", err);
         }
+        // If no valid session ID was found, create one
+        await handleNewSession();
+      } catch (err) {
+        console.error("Initialization error:", err);
+      } finally {
+        // This guarantees the loading screen ALWAYS disappears
+        setIsLoadingSession(false);
       }
-
-      // Create a brand new session if none exists
-      await handleNewSession();
     }
-
     initSession();
   }, []);
 
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
+  // --- NEW: Auto-refresh sidebar titles when chat updates ---
+  useEffect(() => {
+    // If we have an active session and the user/AI has sent messages, 
+    // silently fetch the sessions list in the background to grab the newly generated title.
+    if (sessionId && messages.length > 1) {
+      fetchSessions();
+    }
+  }, [messages.length, sessionId]);
+  // ----------------------------------------------------------
+
   // Create a brand new session and reset UI
   const handleNewSession = async () => {
+    setIsLoadingSession(true); // <-- Start loading animation
     try {
       const res = await fetch(`${API_URL}/api/sessions`, { method: "POST" });
       const data = await res.json();
@@ -101,11 +125,20 @@ export default function Home() {
       setIsSidebarOpen(false);
     } catch (err) {
       console.error("Failed to create session", err);
+    } finally {
+      setIsLoadingSession(false); // <-- Stop loading animation
     }
   };
 
   // Switch to an old session
   const handleSelectSession = async (sid: string) => {
+    // Prevent fetching and loading if we are already viewing this session!
+    if (sid === sessionId) {
+      setIsSidebarOpen(false);
+      return; 
+    }
+
+    setIsLoadingSession(true);
     try {
       const res = await fetch(`${API_URL}/api/sessions/${sid}`);
       if (res.ok) {
@@ -113,12 +146,13 @@ export default function Home() {
         setSessionId(sid);
         window.history.replaceState({}, "", `?session=${sid}`);
         setCoursePlan(data.plan || null);
+        
         if (data.messages && data.messages.length > 0) {
           setMessages(
             data.messages.map((m: any) => ({
               id: m.id,
-              sender: m.role,
-              text: m.content,
+              sender: m.role,   // Maps database role to 'sender'
+              text: m.content,  // Maps database content to 'text'
               timestamp: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             }))
           );
@@ -132,17 +166,48 @@ export default function Home() {
             },
           ]);
         }
-        setIsSidebarOpen(false);
       }
     } catch (err) {
       console.error("Failed to load selected session", err);
+    } finally {
+      setIsSidebarOpen(false);
+      setIsLoadingSession(false); // Guarantee removal
+    }
+  };
+
+  const handleDeleteSession = async (sid: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent triggering session selection
+
+    // 1. Safeguard: Do not allow deleting if it's the only session left
+    if (sessions.length <= 1) {
+      alert("You cannot delete your final remaining session.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/sessions/${sid}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        // Filter out deleted session from local state list
+        const remainingSessions = sessions.filter(s => s.id !== sid);
+        setSessions(remainingSessions);
+
+        // If the user deleted the currently active session, switch to the top remaining session
+        if (sid === sessionId && remainingSessions.length > 0) {
+          handleSelectSession(remainingSessions[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to delete session:", err);
     }
   };
 
   return (
-    <main className="h-screen w-full bg-slate-50 flex flex-col overflow-hidden relative">
+    <main className="h-screen w-full bg-slate-50 flex flex-col overflow-hidden relative print:h-auto print:overflow-visible print:block">
       {/* Top Header */}
-      <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 shadow-xs z-20 shrink-0">
+      <header className="h-14 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between px-4 sm:px-6 shadow-xs z-20 shrink-0 transition-colors print:hidden">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -155,12 +220,20 @@ export default function Home() {
             <div className="p-1.5 bg-blue-600 text-white rounded-md">
               <Sparkles size={16} />
             </div>
-            <h1 className="text-sm font-bold text-slate-800 tracking-tight">AI Course Planner</h1>
+            <h1 className="text-sm font-bold text-slate-800 dark:text-white tracking-tight">AI Course Planner</h1>
           </div>
         </div>
-        <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
-          Session: {sessionId ? sessionId.slice(0, 8) + '...' : 'Loading...'}
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+            Session: {sessionId ? sessionId.slice(0, 8) + '...' : 'Loading...'}
+          </span>
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors"
+          >
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
       </header>
 
       {/* Main Layout Container with Expandable Sidebar */}
@@ -190,23 +263,31 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">Recent Sessions</h3>
             {sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => handleSelectSession(s.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-xs flex items-center gap-2.5 transition-colors ${
-                  sessionId === s.id
-                    ? "bg-blue-50 text-blue-700 font-semibold border border-blue-200/60"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <MessageSquare size={14} className="shrink-0 text-slate-400" />
-                <div className="truncate flex-1">
-                  <p className="truncate font-medium">Session {s.id.slice(0, 8)}</p>
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    {new Date(s.created_at).toLocaleDateString()} {new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              </button>
+              <div key={s.id} className="flex items-center gap-1 group">
+                <button
+                  onClick={() => handleSelectSession(s.id)}
+                  className={`flex-1 text-left px-3 py-2.5 rounded-lg text-xs flex items-center gap-2.5 transition-colors ${
+                    sessionId === s.id
+                      ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-semibold border border-blue-200/60 dark:border-blue-800/50"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+                  }`}
+                >
+                  <MessageSquare size={14} className="shrink-0 text-slate-400" />
+                  <div className="truncate flex-1">
+                    <p className="truncate font-medium">{s.title || "New Session"}</p>
+                    <span className="text-[10px] text-slate-400 font-normal">
+                      {new Date(s.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => handleDeleteSession(s.id,e)}
+                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                  title="Delete Session"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -220,9 +301,21 @@ export default function Home() {
         )}
 
         {/* Resizable Split Panes with Enforced Minimum Widths */}
-        <div className="flex-1 h-full overflow-hidden">
-          <Group orientation="horizontal">
-            <Panel defaultSize={40} minSize={30}>
+        <div className="flex-1 h-full overflow-hidden relative print:h-auto print:overflow-visible print:block">
+          
+          {/* --- WORKSPACE-SCOPED LOADING OVERLAY --- */}
+          {isLoadingSession && (
+            <div className="absolute inset-0 z-10 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center transition-all">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium animate-pulse">
+                Fetching session data...
+              </p>
+            </div>
+          )}
+          {/* ---------------------------------------- */}
+
+          <Group orientation="horizontal" className="print:block print:h-auto print:overflow-visible">
+            <Panel defaultSize={40} minSize={30} className="print:hidden">
               <ChatContainer 
                 sessionId={sessionId}
                 messages={messages} 
@@ -232,15 +325,15 @@ export default function Home() {
               />
             </Panel>
 
-            <Separator className="w-2 bg-slate-200 hover:bg-blue-400 transition-colors cursor-col-resize flex items-center justify-center">
-              <div className="w-1 h-8 bg-slate-400 rounded-full flex flex-col justify-between p-[1px]">
-                <div className="bg-white h-1 w-full rounded-full"></div>
-                <div className="bg-white h-1 w-full rounded-full"></div>
-                <div className="bg-white h-1 w-full rounded-full"></div>
+            <Separator className="w-2 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 dark:hover:bg-blue-500 transition-colors cursor-col-resize flex items-center justify-center print:hidden">
+              <div className="w-1 h-8 bg-slate-400 dark:bg-slate-500 rounded-full flex flex-col justify-between p-[1px]">
+                <div className="bg-white dark:bg-slate-900 h-1 w-full rounded-full"></div>
+                <div className="bg-white dark:bg-slate-900 h-1 w-full rounded-full"></div>
+                <div className="bg-white dark:bg-slate-900 h-1 w-full rounded-full"></div>
               </div>
             </Separator>
 
-            <Panel defaultSize={60} minSize={35}>
+            <Panel defaultSize={60} minSize={45} className="print:w-full print:h-auto print:overflow-visible print:block">
               <CoursePreview coursePlan={coursePlan} setCoursePlan={setCoursePlan} />
             </Panel>
           </Group>

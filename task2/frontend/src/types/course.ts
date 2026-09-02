@@ -5,12 +5,19 @@ export interface Resource {
   url: string;
 }
 
+export interface PracticeExercise {
+  title: string;
+  type: string;
+  url: string;
+}
+
 export interface Lesson {
   id: string;
   title: string;
   topics: string[];
   difficulty: string; // Changed from strict union to string to support select inputs
   resources: Resource[];
+  practiceExercises?: PracticeExercise[];
   assessment?: string;
 }
 

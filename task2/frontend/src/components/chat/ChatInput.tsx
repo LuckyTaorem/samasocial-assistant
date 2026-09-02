@@ -21,7 +21,7 @@ export default function ChatInput({ onSendMessage }: ChatInputProps) {
   };
 
   return (
-    <div className="p-4 bg-white border-t border-slate-200/80 shadow-xs">
+    <div className="p-4 bg-white dark:bg-slate-950 border-t border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors">
       {selectedFile && (
         <div className="flex items-center justify-between bg-blue-50 border border-blue-100 px-3 py-1.5 rounded-lg mb-2 text-xs text-blue-700 animate-fade-in">
           <span className="truncate font-medium">📎 {selectedFile.name}</span>
@@ -30,7 +30,7 @@ export default function ChatInput({ onSendMessage }: ChatInputProps) {
           </button>
         </div>
       )}
-      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl p-1.5 focus-within:border-blue-500 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-500/10 transition-all">
+      <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 rounded-xl p-1.5 focus-within:border-blue-500 focus-within:bg-white dark:focus-within:bg-slate-800 focus-within:ring-2 focus-within:ring-blue-500/10 transition-all">
         <input 
           type="file" 
           ref={fileInputRef} 
@@ -46,7 +46,7 @@ export default function ChatInput({ onSendMessage }: ChatInputProps) {
           <Paperclip size={18} />
         </button>
         <textarea
-          className="flex-1 resize-none bg-transparent py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none max-h-24"
+          className="w-full bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2 focus:outline-none resize-none transition-colors"
           rows={1}
           placeholder="Type your message or upload syllabus..."
           value={input}

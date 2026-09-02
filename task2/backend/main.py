@@ -1,15 +1,16 @@
+import uuid
+import sys
 import json
 import os
 from fastapi import Body, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from groq import Groq
-from requests import request
 from supabase import create_client, Client
 from pypdf import PdfReader
 import io
 from schemas import ChatRequest, AIResponse
-import uuid
+from tavily import TavilyClient
 
 load_dotenv()
 
@@ -26,98 +27,273 @@ app.add_middleware(
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
-SYSTEM_PROMPT = """You are an expert instructional designer and AI course-planning mentor. Your goal is to guide the mentor through a structured curriculum-building process.
+# --- OPTIMIZED SYSTEM PROMPT WITH UNIVERSAL PRACTICE EXERCISES ---
+SYSTEM_PROMPT = """You are a universal AI course planner supporting any academic, professional, or technical subject. Output ONLY valid JSON.
 
-You must ALWAYS respond with a valid JSON object containing these two fields:
+SCENARIO 1: FIRST GENERATION (No Current Plan state provided)
+Output this exact format:
 {
-  "reply": "Your conversational message or question to the mentor.",
-  "plan": null // or the full structured course plan object when ready
+  "reply": "Here is your course...",
+  "full_plan": { "subject": "...", "duration": "...", "targetAudience": "...", "modules": [ array of complete modules ] }
 }
 
-WORKFLOW STAGES:
-1. INTAKE STAGE: 
-   - If the mentor has not yet provided the Subject/Topic, Target Audience (age, skill level, prior knowledge), Duration & Session Frequency, and Learning Goals, keep `"plan": null`.
-   - Ask clarifying questions conversationally (1-2 at a time) to gather these details.
+SCENARIO 2: MODIFYING EXISTING PLAN (Current Plan state is provided)
+Format:
+{
+  "reply": "I have updated the modules...",
+  "full_plan": null,
+  "modifications": {
+    "added_or_edited_modules": [ array of updated modules ],
+    "deleted_module_ids": [ array of IDs to remove ]
+  }
+}
 
-2. GENERATION STAGE: 
-   - Once you have enough information from the intake conversation (or if the mentor uploaded a syllabus PDF), generate a comprehensive course plan.
-   - Populate `"plan"` with: subject, targetAudience, duration, and an array of modules.
-   - Each module must contain: id, title, learningObjectives, prerequisites (bonus), and lessons.
-   - Each lesson must contain: id, title, topics, difficulty ("Beginner" | "Intermediate" | "Advanced"), assessments, and recommended resources (strictly public platforms like YouTube, documentation, HackerRank, LeetCode, Kaggle, blog posts, or articles with titles, types, and URLs).
-   - Include module-level assessments/quizzes.
+STRICT SEPARATION RULES FOR URLS:
+1. `resources`: Must be documentation, guides, official textbooks, or explanatory articles.
+2. `practiceExercises`: MUST BE 100% INTERACTIVE AND ACTIONABLE. Never assign a static blog post, tutorial article, or reading page to `practiceExercises`. It must point strictly to active problem-solving platforms, coding sandboxes, mock test portals, or interactive quiz hubs (e.g., LeetCode, HackerRank, Kaggle, Khan Academy practice, or official exam question banks).
 
-3. REFINEMENT & EXTENSION RULES (CRITICAL):
-   - When the mentor asks to **add more modules**, **expand**, or **modify** the course, you MUST **retain all existing modules** from the current course plan state. 
-   - Append the new modules sequentially right after the existing ones (e.g., if the current plan already has 2 modules, your new modules must start at Module 3 onwards). Do not reset the module sequence or overwrite previous work unless explicitly told to restart from scratch.
-
-4. SCHEMA REQUIREMENTS: 
-   - Each module must have: id, title, learningObjectives (array of strings), prerequisites (array of strings), lessons (array), and assessment (string).
-   - Each lesson must have: id, title, topics (array of strings), difficulty ("Beginner" | "Intermediate" | "Advanced"), resources (array with title, type, url), and assessment.
+SCHEMA FOR A MODULE: 
+{ 
+  "id": "M1", 
+  "title": "...", 
+  "learningObjectives": [], 
+  "prerequisites": [], 
+  "lessons": [ 
+    { 
+      "id": "L1", 
+      "title": "...", 
+      "topics": [], 
+      "difficulty": "Beginner", 
+      "resources": [{"title":"", "type":"Official Documentation", "url":"[Article/Guide URL]"}], 
+      "practiceExercises": [{"title":"", "type":"Interactive Problem Set", "url":"[Active Coding/Testing Platform URL]"}], 
+      "assessment": "..." 
+    } 
+  ], 
+  "assessment": "" 
+}
 """
+
+def clean_and_enforce_practice_links(plan):
+    if not plan or "modules" not in plan:
+        return plan
+    
+    subject = plan.get("subject", "").lower()
+    is_tech = any(kw in subject for kw in ["code", "python", "javascript", "react", "programming", "software", "dev", "computer", "html", "css"])
+    
+    # Define fallback practice platforms based on domain
+    default_practice_url = "https://leetcode.com/problemset/" if is_tech else "https://www.khanacademy.org/"
+
+    for mod in plan.get("modules", []):
+        for lesson in mod.get("lessons", []):
+            # 1. Deduplicate resources
+            seen_res_urls = set()
+            unique_res = []
+            for res in lesson.get("resources", []):
+                url = res.get("url", "").strip().lower()
+                if url and url not in seen_res_urls:
+                    seen_res_urls.add(url)
+                    unique_res.append(res)
+                elif not url:
+                    unique_res.append(res)
+            lesson["resources"] = unique_res
+
+            # 2. Deduplicate and filter practice exercises (Block blogs/articles)
+            seen_ex_urls = set()
+            unique_ex = []
+            for ex in lesson.get("practiceExercises", []):
+                url = ex.get("url", "").strip().lower()
+                
+                # Check if URL looks like a blog, article, or static read page
+                is_blog_or_article = any(bad in url for bad in ["/blog/", "/article/", "/post/", "medium.com", "dev.to", "substack.com", "wordpress", "news"])
+                
+                if is_blog_or_article or not url:
+                    # Force overwrite with a true practice platform
+                    ex["url"] = default_practice_url
+                    if is_tech:
+                        ex["type"] = "LeetCode Practice"
+                    else:
+                        ex["type"] = "Interactive Practice Set"
+
+                if url and url not in seen_ex_urls:
+                    seen_ex_urls.add(ex.get("url", "").strip().lower())
+                    unique_ex.append(ex)
+                elif not url:
+                    unique_ex.append(ex)
+                    
+            lesson["practiceExercises"] = unique_ex
+            
+    return plan
 
 @app.post("/api/chat", response_model=AIResponse)
 async def chat_with_ai(
-    session_id: str = Form(None), # <--- Added session_id parameter
+    session_id: str = Form(None),
     messages: str = Form(...),  
     current_plan: str = Form(None),
     file: UploadFile = File(None)
 ):
     try:
         parsed_messages = json.loads(messages)
-        parsed_plan = json.loads(current_plan) if current_plan else None
+        raw_plan = json.loads(current_plan) if current_plan else None
+        if isinstance(raw_plan, list):
+            parsed_plan = {"modules": raw_plan}  # Coerce list into dictionary structure
+        elif isinstance(raw_plan, dict):
+            parsed_plan = raw_plan
+        else:
+            parsed_plan = None
 
         chat_history = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-        # Handle PDF upload if attached
+        # Extract user text for context search
+        latest_user_text = parsed_messages[-1]["content"] if parsed_messages else ""
+        course_subject = parsed_plan.get("subject", "") if parsed_plan else latest_user_text
+    
+        # --- DYNAMIC LESSON-AWARE TAVILY SEARCH ---
+        verified_links_context = ""
+        try:
+            course_subject = parsed_plan.get("subject", "") if parsed_plan else latest_user_text
+            
+            # Extract specific lesson titles from the current plan to build a targeted search query
+            lesson_queries = []
+            if parsed_plan:
+                for mod in parsed_plan.get("modules", []):
+                    for lesson in mod.get("lessons", []):
+                        if lesson.get("title"):
+                            lesson_queries.append(lesson.get("title"))
+            
+            # Combine subject with specific lesson keywords for high precision
+            specific_topics = " ".join(lesson_queries[:5]) # Take key lesson titles
+            # Broaden search query to specifically hunt for practice exercises and test hubs
+            search_query = f"{course_subject} {specific_topics} interactive coding challenges problem sets mock tests online practice platform"
+            
+            search_res = tavily_client.search(
+                query=search_query,
+                max_results=15,
+                search_depth="basic"
+            )
+            results = search_res.get("results", [])
+            if results:
+                verified_links_context = "\n\nVERIFIED WEB SEARCH RESULTS (STRICT LESSON-TO-URL MAPPING):\n"
+                verified_links_context += "You have a pool of targeted links below. You MUST read the title of each search result and map it to the most contextually relevant lesson title. Never assign the same URL to multiple lessons.\n"
+                for idx, r in enumerate(results):
+                    verified_links_context += f"[{idx+1}] Source Title: {r.get('title')}\n    URL: {r.get('url')}\n"
+        except Exception as tavily_err:
+            print(f"Tavily search warning: {tavily_err}")
+        # ------------------------------------------
+
         if file:
             contents = await file.read()
             reader = PdfReader(io.BytesIO(contents))
-            extracted_text = ""
-            for page in reader.pages:
-                extracted_text += page.extract_text() or ""
-            
+            extracted_text = "".join([page.extract_text() or "" for page in reader.pages])
             chat_history.append({
                 "role": "user",
-                "content": f"[Uploaded Syllabus PDF Content]:\n{extracted_text[:4000]}\n\nPlease analyze this syllabus, improve it, and generate the structured course plan."
+                # Compress the PDF extraction and enforce a hard limit on generation size
+                "content": f"[PDF Syllabus]:\n{extracted_text[:4000]}\n\nGenerate the structured course plan. IMPORTANT: Limit to a maximum of 4 modules with 2-3 lessons each to ensure the response remains concise."
             })
 
+        # Send current state but instruct AI to ONLY send back the pieces that change
         if parsed_plan:
+            minified_plan = json.dumps(parsed_plan, separators=(',', ':'))
             chat_history.append({
                 "role": "system", 
-                "content": f"The current course plan state is: {json.dumps(parsed_plan)}"
+                "content": f"CURRENT PLAN STATE:\n{minified_plan}\n\nINSTRUCTION: Use SCENARIO 2. Return ONLY the modifications (added_or_edited_modules, deleted_module_ids)."
             })
             
-        for msg in parsed_messages:
-            chat_history.append({"role": msg["role"], "content": msg["content"]})
+        if parsed_messages:
+            chat_history.append({
+                "role": "user", 
+                "content": f"{latest_user_text}{verified_links_context}"
+            })
 
+        # --- AI GENERATION ---
+        # 5200 (Input) + 2500 (Max Output) = 7700 TPM (Safely under the 8,000 limit)
         completion = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model="openai/gpt-oss-120b", 
             messages=chat_history,
             response_format={"type": "json_object"},
+            max_tokens=4000, 
+            temperature=0.3,
         )
         
         raw_content = completion.choices[0].message.content
-        parsed_data = json.loads(raw_content)
-        response_obj = AIResponse(**parsed_data)
+        raw_data = json.loads(raw_content)
+        if isinstance(raw_data, list):
+            parsed_data = {"reply": "Here is your updated plan.", "full_plan": {"modules": raw_data}, "modifications": None}
+        elif isinstance(raw_data, dict):
+            parsed_data = raw_data
+        else:
+            parsed_data = {"reply": str(raw_content), "full_plan": None, "modifications": None}
+        
+        # =========================================================
+        # SMART MERGE LOGIC (Merges AI modifications into old plan)
+        # =========================================================
+        reply_text = parsed_data.get("reply", "")
+        final_plan = None
+        
+        if parsed_plan:
+            final_plan = parsed_plan
+            mods = parsed_data.get("modifications", {})
+            if mods:
+                # 1. Process Deletions
+                del_ids = mods.get("deleted_module_ids", [])
+                if del_ids:
+                    final_plan["modules"] = [m for m in final_plan.get("modules", []) if m.get("id") not in del_ids]
+                
+                # 2. Process Additions & Edits
+                for mod in mods.get("added_or_edited_modules", []):
+                    existing_idx = next((i for i, m in enumerate(final_plan.get("modules", [])) if m.get("id") == mod.get("id")), None)
+                    if existing_idx is not None:
+                        final_plan["modules"][existing_idx] = mod # Update existing
+                    else:
+                        final_plan["modules"].append(mod) # Append new
+        else:
+            # If no plan existed, grab the newly generated full plan
+            final_plan = parsed_data.get("full_plan")
 
-        # Save session history and course plans to Supabase if session_id exists
+        final_plan = clean_and_enforce_practice_links(final_plan)
+
+        response_obj = AIResponse(reply=reply_text, plan=final_plan)
+
+        # Save to Supabase
         if session_id and parsed_messages:
-            latest_user_msg = parsed_messages[-1]["content"]
+
+            if len(parsed_messages) == 1:
+                new_title = latest_user_text[:30] + ("..." if len(latest_user_text) > 30 else "")
+                try:
+                    title_res = client.chat.completions.create(
+                        model="openai/gpt-oss-120b",
+                        messages=[
+                            {"role": "system", "content": "Generate a short 3-5 word title for this request. ONLY text, no quotes."},
+                            {"role": "user", "content": latest_user_text}
+                        ],
+                        max_tokens=15,
+                        temperature=0.3
+                    )
+                    ai_title = title_res.choices[0].message.content.strip().strip('"')
+                    if ai_title:
+                        new_title = ai_title
+                except Exception as ai_err:
+                    print(f"AI title model warning (using fallback): {ai_err}")
+
+                try:
+                    supabase.table("sessions").update({"title": new_title}).eq("id", session_id).execute()
+                except Exception as db_title_err:
+                    print(f"Title update failed: {db_title_err}")
+
             try:
                 supabase.table("messages").insert([
-                    {"session_id": session_id, "role": "user", "content": latest_user_msg},
+                    {"session_id": session_id, "role": "user", "content": latest_user_text},
                     {"session_id": session_id, "role": "assistant", "content": response_obj.reply}
                 ]).execute()
 
                 if response_obj.plan:
-                    plan_result = supabase.table("course_plans").upsert({
+                    supabase.table("course_plans").upsert({
                         "session_id": session_id,
-                        "plan_data": response_obj.plan.model_dump()
+                        "plan_data": final_plan
                     }, on_conflict="session_id").execute()
-                    print(f"Course plan saved successfully: {plan_result}")
             except Exception as db_err:
-                print(f"CRITICAL DATABASE SAVE ERROR: {str(db_err)}")
+                print(f"DATABASE ERROR: {str(db_err)}")
 
         return response_obj
 
@@ -125,11 +301,10 @@ async def chat_with_ai(
         print(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"AI processing failed: {str(e)}")
 
-import uuid
+# --- SESSION ENDPOINTS ---
 
 @app.get("/api/sessions")
 def list_sessions():
-    """Retrieves all planning sessions ordered by creation date"""
     try:
         res = supabase.table("sessions").select("*").order("created_at", desc=True).limit(20).execute()
         return {"sessions": res.data}
@@ -138,25 +313,40 @@ def list_sessions():
 
 @app.post("/api/sessions")
 def create_session():
-    """Creates a new planning session in Supabase with a generated UUID"""
     try:
         session_id = str(uuid.uuid4())
-        res = supabase.table("sessions").insert({"id": session_id}).execute()
+        supabase.table("sessions").insert({"id": session_id}).execute()
         return {"session_id": session_id}
     except Exception as e:
-        print(f"--- SUPABASE SESSION ERROR: {str(e)} ---") # <--- Print the real error
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/sessions/{session_id}")
 def get_session_data(session_id: str):
-    """Retrieves chat history and course plan for an existing session"""
     try:
         messages_res = supabase.table("messages").select("*").eq("session_id", session_id).order("created_at").execute()
         plan_res = supabase.table("course_plans").select("*").eq("session_id", session_id).execute()
-        
         return {
             "messages": messages_res.data,
             "plan": plan_res.data[0]["plan_data"] if plan_res.data else None
         }
     except Exception as e:
         raise HTTPException(status_code=404, detail="Session not found")
+
+@app.put("/api/sessions/{session_id}/plan")
+async def update_plan_manual(session_id: str, plan_data: dict = Body(...)):
+    try:
+        supabase.table("course_plans").upsert({
+            "session_id": session_id,
+            "plan_data": plan_data
+        }, on_conflict="session_id").execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str):
+    try:
+        supabase.table("sessions").delete().eq("id", session_id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
