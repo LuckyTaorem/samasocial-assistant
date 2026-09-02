@@ -140,7 +140,7 @@ User Query: ${userMsg.content}`;
 
         // 2. Use Claude 3.5 Sonnet on Puter, which guarantees smooth streaming
         const stream = await puter.ai.chat(prompt, { 
-          model: "claude-3-5-sonnet", 
+          model: "claude-3.5-sonnet", 
           stream: true 
         });
 

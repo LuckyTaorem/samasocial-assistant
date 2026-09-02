@@ -5,12 +5,14 @@ import os
 from fastapi import Body, FastAPI, HTTPException, UploadFile, File, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from groq import Groq
+from litellm import completion
+import litellm
 from supabase import create_client, Client
 from pypdf import PdfReader
 import io
 from schemas import ChatRequest, AIResponse
 from tavily import TavilyClient
+litellm.suppress_debug_info = True
 
 load_dotenv()
 
@@ -25,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
@@ -126,6 +127,67 @@ def clean_and_enforce_practice_links(plan):
             
     return plan
 
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+
+if GROQ_API_KEY:
+    os.environ["GROQ_API_KEY"] = GROQ_API_KEY
+if GEMINI_API_KEY:
+    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+if OPENROUTER_API_KEY:
+    os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
+if COHERE_API_KEY:
+    os.environ["COHERE_API_KEY"] = COHERE_API_KEY
+
+FALLBACK_CHAIN = [
+    "groq/openai/gpt-oss-120b",
+    "gemini/gemini-2.5-flash",
+    "openrouter/google/gemma-2-27b-it",
+    "cohere/command-r-plus",
+    "groq/openai/gpt-oss-20b"
+]
+
+def generate_with_fallback(messages, max_tokens, require_json=False):
+    last_error = None
+    for model in FALLBACK_CHAIN:
+        try:
+            kwargs = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.3,
+            }
+            # Only enforce strict JSON mode for providers that natively support it
+            if require_json and ("groq" in model or "openai" in model):
+                kwargs["response_format"] = {"type": "json_object"}
+                
+            response = completion(**kwargs)
+            raw_content = response.choices[0].message.content
+            
+            # If JSON is required, clean it and test it INSIDE the try-block
+            if require_json:
+                # Clean Markdown wrappers from the string
+                text = raw_content.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[-1]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+                
+                # This will raise a JSONDecodeError if the model truncated the output
+                return json.loads(text)
+            
+            return raw_content.strip()
+            
+        except Exception as e:
+            print(f"Fallback triggered: {model} failed. Error: {e}")
+            last_error = e
+            continue
+            
+    raise Exception(f"All AI models in the fallback chain failed or returned invalid JSON. Last error: {last_error}")
+
 @app.post("/api/chat", response_model=AIResponse)
 async def chat_with_ai(
     session_id: str = Form(None),
@@ -206,18 +268,18 @@ async def chat_with_ai(
                 "content": f"{latest_user_text}{verified_links_context}"
             })
 
-        # --- AI GENERATION ---
-        # 5200 (Input) + 2500 (Max Output) = 7700 TPM (Safely under the 8,000 limit)
-        completion = client.chat.completions.create(
-            model="openai/gpt-oss-120b", 
-            messages=chat_history,
-            response_format={"type": "json_object"},
-            max_tokens=4000, 
-            temperature=0.3,
-        )
         
-        raw_content = completion.choices[0].message.content
-        raw_data = json.loads(raw_content)
+        try:
+            # raw_data is ALREADY a parsed dictionary here; do NOT call .strip() on it!
+            raw_data = generate_with_fallback(
+                messages=chat_history, 
+                max_tokens=4000, 
+                require_json=True
+            )
+        except Exception as fallback_err:
+            print(f"AI chain failed: {fallback_err}")
+            raise HTTPException(status_code=500, detail="The AI failed to generate a complete plan. Please try again.")
+
         if isinstance(raw_data, list):
             parsed_data = {"reply": "Here is your updated plan.", "full_plan": {"modules": raw_data}, "modifications": None}
         elif isinstance(raw_data, dict):
@@ -261,16 +323,15 @@ async def chat_with_ai(
             if len(parsed_messages) == 1:
                 new_title = latest_user_text[:30] + ("..." if len(latest_user_text) > 30 else "")
                 try:
-                    title_res = client.chat.completions.create(
-                        model="openai/gpt-oss-120b",
+                    ai_title = generate_with_fallback(
                         messages=[
                             {"role": "system", "content": "Generate a short 3-5 word title for this request. ONLY text, no quotes."},
                             {"role": "user", "content": latest_user_text}
                         ],
                         max_tokens=15,
-                        temperature=0.3
+                        require_json=False
                     )
-                    ai_title = title_res.choices[0].message.content.strip().strip('"')
+                    ai_title = ai_title.strip().strip('"')
                     if ai_title:
                         new_title = ai_title
                 except Exception as ai_err:

@@ -60,47 +60,63 @@ def parse_youtube(url: str):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
         
     try:
+        # 1. Instantiate the API (Required in the new library version)
         ytt_api = YouTubeTranscriptApi()
-        transcript = ytt_api.fetch(video_id)
+        
+        # 2. Use the new .list() method to find all available captions
+        transcript_list = ytt_api.list(video_id)
+        
+        try:
+            # Try to grab English (manual or auto-generated)
+            transcript = transcript_list.find_transcript(['en', 'en-US', 'en-GB', 'en-IN']).fetch()
+        except:
+            # Fallback: Grab whatever language exists and dynamically translate it to English!
+            first_transcript = next(iter(transcript_list))
+            transcript = first_transcript.translate('en').fetch()
+            
     except Exception as e:
-        # Catch specific scraping blocks and missing subtitles to prevent a 500 crash
         err_type = str(type(e))
         if "RequestBlocked" in err_type or "IPBlocked" in err_type:
             raise HTTPException(
                 status_code=400, 
-                detail="YouTube blocked this server's IP address. Cloud hosting providers (like Render) are often blocked by YouTube's anti-bot systems."
+                detail="YouTube blocked this server's IP address. Cloud hosting providers are often blocked by YouTube's anti-bot systems."
             )
         elif "TranscriptsDisabled" in err_type or "NoTranscript" in err_type:
             raise HTTPException(
                 status_code=400, 
-                detail="This YouTube video does not have transcripts or closed captions enabled."
+                detail="This YouTube video does not have any manual or auto-generated captions enabled."
             )
         else:
             raise HTTPException(
                 status_code=400, 
-                detail="Failed to fetch YouTube transcript. The video might be private or restricted."
+                detail=f"Failed to fetch YouTube transcript. Error: {str(e)}"
             )
     
     docs = []
-    current_text = ""
+    current_text_chunks = []
+    current_length = 0
     current_timestamp = 0
     
-    # Group raw caption lines into larger 800-character blocks
+    # 3. Use the new object syntax (entry.text / entry.start) with the fast array-joiner
     for entry in transcript:
-        if not current_text:
+        if not current_text_chunks:
             current_timestamp = round(entry.start)
-        current_text += " " + entry.text
+            
+        text_part = entry.text
+        current_text_chunks.append(text_part)
+        current_length += len(text_part) + 1 
         
-        if len(current_text) > 800:
+        if current_length > 800:
             docs.append({
-                "text": current_text.strip(),
+                "text": " ".join(current_text_chunks).strip(),
                 "metadata": {"timestamp": current_timestamp}
             })
-            current_text = ""
+            current_text_chunks = []
+            current_length = 0
             
-    if current_text.strip():
+    if current_text_chunks:
         docs.append({
-            "text": current_text.strip(),
+            "text": " ".join(current_text_chunks).strip(),
             "metadata": {"timestamp": current_timestamp}
         })
         

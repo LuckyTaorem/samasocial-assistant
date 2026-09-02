@@ -129,8 +129,11 @@ const handleLinkSubmit = async (e: React.FormEvent) => {
     });
     
     setUrl("");
-  } catch (error) {
+  } catch (error: any) {
     console.error("Link upload failed", error);
+    // --- FIX: Trigger the red error toast on the UI ---
+    setErrorToast(error.message);
+    setTimeout(() => setErrorToast(null), 4000);
   } finally {
     setLoading(false);
     setStatus("");
