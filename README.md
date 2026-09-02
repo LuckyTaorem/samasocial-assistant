@@ -116,3 +116,141 @@ The application will be available at http://localhost:3000.
 - Quiz: Click the "Quiz Me!" button to test your knowledge based on the active sources.
 
 - Manage Sessions: Use the left sidebar to create new chats or switch between previous sessions.
+
+
+# Samasocial Technical Assignment - Task 2: AI Course Planning Assistant for Mentors
+
+## Overview
+This section covers the implementation for **Task 2** of the Samasocial Technical Assignment. It is a conversational AI assistant tailored specifically for mentors and educators to help them plan a complete, well-structured course through a guided back-and-forth conversation[cite: 5]. 
+
+The system leverages structured data generation to ensure the final output is both highly customizable in the UI and ready for backend system integration[cite: 5].
+
+---
+
+## 📸 Screenshots
+*(Note: Add your Task 2 screenshots here)*
+
+| Split-Panel Interface | Inline Editing | PDF Syllabus Import |
+|:---:|:---:|:---:|
+| <img src="link_to_split_panel_image" width="600" /> | <img src="link_to_inline_edit_image" width="600" /> | <img src="link_to_pdf_import_image" width="600" /> |
+
+---
+
+## ✨ Features & Assignment Checklist
+
+### Core Functionality
+- [x] **Guided Intake:** The assistant asks key questions to understand the subject, target audience, duration, and learning goals[cite: 5].
+- [x] **Structured Course Generation:** Generates a complete plan featuring module breakdowns, lesson topics, and module-end assessments[cite: 5]. 
+- [x] **Public Resource Mapping:** Automatically recommends publicly available resources (e.g., YouTube, articles, documentation) and practice exercises from platforms like HackerRank, LeetCode, or Kaggle[cite: 5].
+- [x] **Conversational Refinement:** Mentors can ask follow-up questions to adjust any part of the plan (e.g., "make module 2 simpler")[cite: 5].
+- [x] **Live Preview:** The course plan is viewable as a live preview directly in the web UI, updating in real time as the mentor refines the plan[cite: 5].
+
+### Technical Requirements Implemented
+- [x] **Multi-Turn Context:** Maintains the full context of the planning session across conversational turns[cite: 5].
+- [x] **Structured JSON Output:** The final course plan is produced as structured data (JSON) rather than free-form text, enabling external system integration[cite: 5].
+- [x] **Editable Output UI:** Mentors can click and edit individual fields directly within the UI once the plan is generated[cite: 5].
+- [x] **Split-Panel Design:** Features a clean interface with the chat on one side and the live course plan preview on the other[cite: 5].
+
+### Bonus Features Implemented
+- [x] **PDF Syllabus Import:** Allows mentors to paste an existing syllabus or curriculum PDF for the AI to improve or restructure[cite: 5].
+- [x] **Difficulty Progression:** Includes a difficulty progression indicator (beginner / intermediate / advanced) for each lesson[cite: 5].
+- [x] **Prerequisite Suggestions:** Suggests prerequisite topics the student should know before starting each module[cite: 5].
+
+## 🛠️ Architecture & Tech Stack
+
+### Frontend
+* **Framework:** Next.js / React (TypeScript)
+* **Styling:** Tailwind CSS (Dark/Light mode supported)
+* **UI Components:** `react-resizable-panels` for the split-pane workspace, Lucide React for iconography.
+* **State Management:** React Hooks with isolated browser-based session tracking via `localStorage` (`X-User-ID`).
+
+### Backend
+* **Framework:** FastAPI (Python)
+* **Database:** Supabase (PostgreSQL)
+* **LLM Provider:** Groq API (`openai/gpt-oss-120b` for heavy JSON generation and smart delta-merging).
+* **Live Search:** Tavily API (Dynamically fetches verified, interactive practice links and documentation).
+* **Document Parsing:** `PyPDF2` for extracting text from uploaded syllabus PDFs.
+
+---
+
+## 🚀 Setup & Installation
+
+### Prerequisites
+* Node.js (v18+)
+* Python (3.9+)
+* Supabase Account
+* API Keys: Groq and Tavily
+
+### 1. Database Setup (Supabase)
+You need to create three tables in your Supabase project to handle session memory and course plans:
+1. **`sessions`**: Columns `id` (uuid, primary key), `created_at` (timestamp), `title` (text), and `user_id` (text).
+2. **`messages`**: Columns `id` (uuid), `created_at` (timestamp), `session_id` (uuid, foreign key), `role` (text), and `content` (text).
+3. **`course_plans`**: Columns `id` (uuid), `created_at` (timestamp), `session_id` (uuid, foreign key, unique), and `plan_data` (jsonb).
+
+### 2. Environment Variables
+Create a `.env` file in the **backend** directory:
+```env
+GROQ_API_KEY=your_groq_api_key
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_KEY=your_supabase_anon_key
+TAVILY_API_KEY=your_tavily_api_key
+FRONTEND_URL=http://localhost:3000
+```
+
+### 3. Backend Setup
+Navigate to the backend folder, create a virtual environment, and install dependencies:
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+Create a requirements.txt file with the following:
+```
+fastapi==0.110.0
+uvicorn==0.27.1
+python-multipart==0.0.9
+python-dotenv==1.0.1
+groq==0.4.2
+supabase==2.4.5
+pypdf==4.1.0
+tavily-python==0.3.3
+```
+
+Install the requirements and start the FastAPI server:
+
+```
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+### 4. Frontend Setup
+Navigate to the frontend folder and install dependencies:
+```bash
+cd frontend
+npm install
+```
+
+Start the development server:
+```bash
+npm run dev
+```
+
+The application will be available at http://localhost:3000.
+
+# Usage Guide
+
+1. Initial Setup: Open the web interface. A new, anonymous session is automatically generated and tied to your browser.
+
+2. Define the Course (or Upload a Syllabus):
+
+    - Type out your target audience, learning goals, and subject matter in the chat.
+
+    - Alternatively, click the attachment icon to upload an existing PDF syllabus. The AI will read it and structure it into a modern course format.
+
+3. Live Preview: Watch the right-hand panel instantly populate with your structured course plan, including dynamically fetched, real-world URLs for resources and active practice environments (e.g., LeetCode, HackerRank).
+
+4. Refine via Chat: Ask the AI to make adjustments (e.g., "Make Module 2 easier" or "Swap out the reading materials for video tutorials"). The backend uses a smart delta-merge system to update only the specific JSON nodes you requested without rewriting the whole plan.
+
+5. Inline Editing: Click directly on any text inside the course plan preview (titles, descriptions, URLs) to manually tweak the output.
+
+6. Session Management: Open the left sidebar to start a new course plan, switch between previous sessions, or delete old ones.
