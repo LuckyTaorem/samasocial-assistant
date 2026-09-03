@@ -282,13 +282,35 @@ async def chat_with_ai(
                         text = text[:500] + "... [truncated]"
                     raw_chat_history.append({"role": role, "content": text})
 
+        # Process PDF and attach it directly to the latest user message
+        pdf_context = ""
+        if file:
+            try:
+                contents = await file.read()
+                reader = PdfReader(io.BytesIO(contents))
+                extracted_text = "".join([page.extract_text() or "" for page in reader.pages])
+                
+                if extracted_text.strip():
+                    pdf_context = f"\n\n--- EXTRACTED PDF SYLLABUS TEXT ---\n{extracted_text[:5000]}\n-----------------------------------\n\nSYSTEM INSTRUCTION: The user uploaded a PDF. The text has been automatically extracted and provided above. You MUST use this text to fulfill the request. DO NOT claim you cannot see or read the PDF."
+                else:
+                    pdf_context = "\n\n[System Error: The uploaded PDF contained no readable text (it may be a scanned image). Please inform the user that you need a text-based PDF.]"
+            except Exception as pdf_err:
+                print(f"PDF Parsing Error: {pdf_err}")
+                pdf_context = "\n\n[System Error: Failed to read the uploaded PDF file. Please inform the user.]"
+
         if parsed_messages:
             last_msg = parsed_messages[-1]
             last_role = last_msg.get("role") or ("assistant" if last_msg.get("sender") == "assistant" else "user")
             last_text = last_msg.get("content") or last_msg.get("text") or ""
             raw_chat_history.append({
-                "role": "user", 
+                "role": last_role, 
                 "content": f"{last_text}{verified_links_context}"
+            })
+        elif pdf_context:
+            # Edge case: The user uploaded a file but didn't type a message
+            raw_chat_history.append({
+                "role": "user", 
+                "content": f"Please generate a course based on this uploaded document.{pdf_context}{verified_links_context}"
             })
 
         # --- 3. FIX OPENROUTER ALTERNATING ROLES ---
