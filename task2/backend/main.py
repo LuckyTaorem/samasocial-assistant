@@ -88,6 +88,13 @@ SCHEMA FOR A MODULE:
   ], 
   "assessment": "..." 
 }
+
+CRITICAL JSON FORMATTING RULES (FAILURE IS NOT AN OPTION):
+1. You MUST return ONLY a single, valid, parsable JSON object.
+2. Do NOT output any conversational text, pleasantries, or markdown formatting outside of the JSON object.
+3. You MUST properly close all strings with double quotes.
+4. You MUST escape any double quotes INSIDE your text strings using a backslash (e.g., \"like this\").
+5. Do NOT include trailing commas in arrays or objects.
 """
 
 def clean_and_enforce_practice_links(plan):
@@ -164,6 +171,7 @@ FALLBACK_CHAIN = [
 ]
 
 def generate_with_fallback(messages, max_tokens, require_json=False):
+    """Iterates through the FALLBACK_CHAIN until a model successfully returns valid output."""
     last_error = None
     for model in FALLBACK_CHAIN:
         try:
@@ -171,26 +179,31 @@ def generate_with_fallback(messages, max_tokens, require_json=False):
                 "model": model,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.3,
+                # Lowered temperature to 0.2 to force strict syntax adherence and reduce hallucinations
+                "temperature": 0.2, 
             }
-            # Only enforce strict JSON mode for providers that natively support it
-            if require_json and ("groq" in model or "openai" in model):
+            
+            # Let LiteLLM handle JSON mode conversion for ALL providers (Gemini, OpenRouter, Groq)
+            if require_json:
                 kwargs["response_format"] = {"type": "json_object"}
                 
             response = completion(**kwargs)
             raw_content = response.choices[0].message.content
             
-            # If JSON is required, clean it and test it INSIDE the try-block
             if require_json:
-                # Clean Markdown wrappers from the string
                 text = raw_content.strip()
+                # Aggressively strip Markdown formatting if the AI hallucinated it
                 if text.startswith("```"):
                     text = text.split("\n", 1)[-1]
                 if text.endswith("```"):
                     text = text[:-3]
                 text = text.strip()
                 
-                # This will raise a JSONDecodeError if the model truncated the output
+                # Catch the edge case where the AI leaves the word "json" at the top
+                if text.lower().startswith("json"):
+                    text = text[4:].strip()
+                
+                # This will raise a JSONDecodeError if the model still breaks the syntax
                 return json.loads(text)
             
             return raw_content.strip()
@@ -200,7 +213,7 @@ def generate_with_fallback(messages, max_tokens, require_json=False):
             last_error = e
             continue
             
-    raise Exception(f"All AI models in the fallback chain failed or returned invalid JSON. Last error: {last_error}")
+    raise Exception(f"All models failed or returned unparsable JSON. Last error: {last_error}")
 
 @app.post("/api/chat", response_model=AIResponse)
 async def chat_with_ai(
@@ -276,10 +289,31 @@ async def chat_with_ai(
                 "content": f"CURRENT PLAN STATE:\n{minified_plan}\n\nINSTRUCTION: Use SCENARIO 2. Return ONLY the modifications (added_or_edited_modules, deleted_module_ids)."
             })
             
+        # --- NEW: SLIDING WINDOW MEMORY ---
+        # Keep only the last 6 messages (3 back-and-forth turns) to prevent token overflow
+        if parsed_messages and len(parsed_messages) > 1:
+            recent_history = parsed_messages[-7:-1] # Grab up to 6 previous messages excluding the current one
+            
+            for msg in recent_history:
+                role = msg.get("role") or ("assistant" if msg.get("sender") == "assistant" else "user")
+                text = msg.get("content") or msg.get("text") or ""
+                
+                if text:
+                    # Hard-cap the length of past assistant messages. 
+                    # If it previously output a massive JSON string, this prevents it from blowing up the context window.
+                    if role == "assistant" and len(text) > 500:
+                        text = text[:500] + "... [truncated for length to save tokens]"
+                        
+                    chat_history.append({"role": role, "content": text})
+
+        # Append the latest user message with the newly fetched verified links context
         if parsed_messages:
+            last_msg = parsed_messages[-1]
+            last_role = last_msg.get("role") or ("assistant" if last_msg.get("sender") == "assistant" else "user")
+            last_text = last_msg.get("content") or last_msg.get("text") or ""
             chat_history.append({
                 "role": "user", 
-                "content": f"{latest_user_text}{verified_links_context}"
+                "content": f"{last_text}{verified_links_context}"
             })
 
         
@@ -299,7 +333,8 @@ async def chat_with_ai(
         elif isinstance(raw_data, dict):
             parsed_data = raw_data
         else:
-            parsed_data = {"reply": str(raw_content), "full_plan": None, "modifications": None}
+            # FIX: Removed `str(raw_content)` because that variable no longer exists in this scope.
+            parsed_data = {"reply": "Here is your plan.", "full_plan": None, "modifications": None}
         
         # =========================================================
         # SMART MERGE LOGIC (Merges AI modifications into old plan)
