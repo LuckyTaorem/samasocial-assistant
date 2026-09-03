@@ -13,6 +13,7 @@ import io
 from schemas import ChatRequest, AIResponse
 from tavily import TavilyClient
 litellm.suppress_debug_info = True
+litellm.drop_params = True
 
 load_dotenv()
 
@@ -31,71 +32,52 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 # --- OPTIMIZED SYSTEM PROMPT WITH INTAKE & UNIVERSAL PRACTICE EXERCISES ---
-SYSTEM_PROMPT = """You are an expert instructional designer and a universal AI course-planning mentor. Your goal is to guide the user through a structured curriculum-building process. Output ONLY valid JSON.
+# --- MODULAR SYSTEM PROMPTS ---
 
-WORKFLOW STAGES & SCENARIOS:
+INTAKE_PROMPT = """You are an AI course-planning mentor. The user wants to build a course.
+Your goal is strictly to ask 1-2 conversational questions to gather: Subject, Target Audience, and Duration.
+DO NOT generate the course plan yet.
 
-SCENARIO 0: INTAKE STAGE (Gathering Information)
-- If the user has NOT provided enough context (Subject, Target Audience, Duration, and Learning Goals), ask 1-2 conversational questions to gather these details.
-- Output this exact format:
+CRITICAL JSON RULES:
+Output ONLY this exact JSON format. No markdown, no trailing commas, escape internal quotes.
 {
-  "reply": "Your conversational question to the mentor here...",
+  "reply": "Your conversational question here...",
   "full_plan": null,
   "modifications": null
-}
+}"""
 
-SCENARIO 1: FIRST GENERATION (Creating the initial plan)
-- Once you have enough info from the intake conversation (or if the user uploaded a syllabus PDF), generate the comprehensive course plan.
-- Output this exact format:
+GENERATION_PROMPT = """You are an AI course-planning mentor. 
+Your goal is to generate a comprehensive course plan based on the user's input.
+Assume sensible defaults (e.g., Duration: "8-12 weeks", Target Audience: "Beginners") if not fully specified.
+
+STRICT SEPARATION RULES FOR URLS:
+1. `resources`: Official documentation, guides, or explanatory articles.
+2. `practiceExercises`: MUST BE 100% INTERACTIVE (e.g., LeetCode, HackerRank, Kaggle). No static blogs.
+
+SCHEMA FOR A MODULE: 
+{ "id": "M1", "title": "...", "learningObjectives": ["..."], "prerequisites": ["..."], "lessons": [ { "id": "L1", "title": "...", "topics": ["..."], "difficulty": "Beginner | Intermediate | Advanced", "resources": [{"title":"", "type":"Documentation", "url":"..."}], "practiceExercises": [{"title":"", "type":"Interactive Problem", "url":"..."}], "assessment": "..." } ], "assessment": "..." }
+
+CRITICAL JSON RULES:
+Output ONLY this exact JSON format. No markdown, no trailing commas, escape internal quotes.
 {
   "reply": "Here is your course...",
   "full_plan": { "subject": "...", "duration": "...", "targetAudience": "...", "modules": [ array of complete modules ] },
   "modifications": null
-}
+}"""
 
-SCENARIO 2: MODIFYING EXISTING PLAN (Current Plan state is provided)
-- REFINEMENT & EXTENSION RULES (CRITICAL): When the user asks to add more modules, expand, or modify the course, you MUST retain the existing structure. Append new modules sequentially (e.g., if the current plan has 2 modules, new modules start at M3). Do not overwrite previous work unless told to.
-- Output this exact format:
+MODIFICATION_PROMPT = """You are an AI course-planning mentor modifying an existing course plan.
+REFINEMENT RULES: Retain existing modules. Append new modules sequentially (e.g., if plan has M1 and M2, new is M3).
+
+CRITICAL JSON RULES:
+Output ONLY this exact JSON format containing the delta changes. No markdown, no trailing commas, escape internal quotes.
 {
-  "reply": "I have updated the modules as requested...",
+  "reply": "I have updated the plan...",
   "full_plan": null,
   "modifications": {
-    "added_or_edited_modules": [ array of new or updated modules ],
-    "deleted_module_ids": [ array of module IDs to remove, if any ]
+    "added_or_edited_modules": [ array of new/updated modules ],
+    "deleted_module_ids": [ array of IDs to remove ]
   }
-}
-
-STRICT SEPARATION RULES FOR URLS:
-1. `resources`: Must be documentation, guides, official textbooks, or explanatory articles.
-2. `practiceExercises`: MUST BE 100% INTERACTIVE AND ACTIONABLE. Never assign a static blog post, tutorial article, or reading page to `practiceExercises`. It must point strictly to active problem-solving platforms, coding sandboxes, mock test portals, or interactive quiz hubs (e.g., LeetCode, HackerRank, Kaggle, Khan Academy practice, or official exam question banks).
-
-SCHEMA FOR A MODULE: 
-{ 
-  "id": "M1", 
-  "title": "...", 
-  "learningObjectives": ["..."], 
-  "prerequisites": ["..."], 
-  "lessons": [ 
-    { 
-      "id": "L1", 
-      "title": "...", 
-      "topics": ["..."], 
-      "difficulty": "Beginner | Intermediate | Advanced", 
-      "resources": [{"title":"", "type":"Official Documentation", "url":"[Article/Guide URL]"}], 
-      "practiceExercises": [{"title":"", "type":"Interactive Problem Set", "url":"[Active Coding/Testing Platform URL]"}], 
-      "assessment": "..." 
-    } 
-  ], 
-  "assessment": "..." 
-}
-
-CRITICAL JSON FORMATTING RULES (FAILURE IS NOT AN OPTION):
-1. You MUST return ONLY a single, valid, parsable JSON object.
-2. Do NOT output any conversational text, pleasantries, or markdown formatting outside of the JSON object.
-3. You MUST properly close all strings with double quotes.
-4. You MUST escape any double quotes INSIDE your text strings using a backslash (e.g., \"like this\").
-5. Do NOT include trailing commas in arrays or objects.
-"""
+}"""
 
 def clean_and_enforce_practice_links(plan):
     if not plan or "modules" not in plan:
@@ -232,18 +214,22 @@ async def chat_with_ai(
         else:
             parsed_plan = None
 
-        chat_history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # --- 1. DYNAMIC PROMPT ROUTING ---
+        if parsed_plan:
+            active_system_prompt = MODIFICATION_PROMPT
+        elif file or (parsed_messages and len(parsed_messages) > 2):
+            active_system_prompt = GENERATION_PROMPT
+        else:
+            active_system_prompt = INTAKE_PROMPT
 
-        # Extract user text for context search
+        raw_chat_history = [{"role": "system", "content": active_system_prompt}]
+
         latest_user_text = parsed_messages[-1]["content"] if parsed_messages else ""
-        course_subject = parsed_plan.get("subject", "") if parsed_plan else latest_user_text
-    
+        
         # --- DYNAMIC LESSON-AWARE TAVILY SEARCH ---
         verified_links_context = ""
         try:
             course_subject = parsed_plan.get("subject", "") if parsed_plan else latest_user_text
-            
-            # Extract specific lesson titles from the current plan to build a targeted search query
             lesson_queries = []
             if parsed_plan:
                 for mod in parsed_plan.get("modules", []):
@@ -251,9 +237,7 @@ async def chat_with_ai(
                         if lesson.get("title"):
                             lesson_queries.append(lesson.get("title"))
             
-            # Combine subject with specific lesson keywords for high precision
-            specific_topics = " ".join(lesson_queries[:5]) # Take key lesson titles
-            # Broaden search query to specifically hunt for practice exercises and test hubs
+            specific_topics = " ".join(lesson_queries[:5])
             search_query = f"{course_subject} {specific_topics} interactive coding challenges problem sets mock tests online practice platform"
             
             search_res = tavily_client.search(
@@ -263,62 +247,60 @@ async def chat_with_ai(
             )
             results = search_res.get("results", [])
             if results:
-                verified_links_context = "\n\nVERIFIED WEB SEARCH RESULTS (STRICT LESSON-TO-URL MAPPING):\n"
-                verified_links_context += "You have a pool of targeted links below. You MUST read the title of each search result and map it to the most contextually relevant lesson title. Never assign the same URL to multiple lessons.\n"
+                verified_links_context = "\n\nVERIFIED WEB SEARCH RESULTS:\n"
+                verified_links_context += "Map these verified links to the most relevant lesson. Never assign the same URL to multiple lessons.\n"
                 for idx, r in enumerate(results):
-                    verified_links_context += f"[{idx+1}] Source Title: {r.get('title')}\n    URL: {r.get('url')}\n"
+                    verified_links_context += f"[{idx+1}] Title: {r.get('title')}\n    URL: {r.get('url')}\n"
         except Exception as tavily_err:
             print(f"Tavily search warning: {tavily_err}")
         # ------------------------------------------
 
+        # --- 2. BUILD RAW HISTORY ---
         if file:
             contents = await file.read()
             reader = PdfReader(io.BytesIO(contents))
             extracted_text = "".join([page.extract_text() or "" for page in reader.pages])
-            chat_history.append({
+            raw_chat_history.append({
                 "role": "user",
-                # Compress the PDF extraction and enforce a hard limit on generation size
-                "content": f"[PDF Syllabus]:\n{extracted_text[:4000]}\n\nGenerate the structured course plan. IMPORTANT: Limit to a maximum of 4 modules with 2-3 lessons each to ensure the response remains concise."
+                "content": f"[PDF Syllabus]:\n{extracted_text[:4000]}\n\nGenerate the structured course plan. Limit to 4 modules with 2-3 lessons each."
             })
 
-        # Send current state but instruct AI to ONLY send back the pieces that change
         if parsed_plan:
             minified_plan = json.dumps(parsed_plan, separators=(',', ':'))
-            chat_history.append({
+            raw_chat_history.append({
                 "role": "system", 
-                "content": f"CURRENT PLAN STATE:\n{minified_plan}\n\nINSTRUCTION: Use SCENARIO 2. Return ONLY the modifications (added_or_edited_modules, deleted_module_ids)."
+                "content": f"CURRENT PLAN STATE:\n{minified_plan}\n\nINSTRUCTION: Return ONLY the modifications."
             })
             
-        # --- NEW: SLIDING WINDOW MEMORY ---
-        # Keep only the last 6 messages (3 back-and-forth turns) to prevent token overflow
         if parsed_messages and len(parsed_messages) > 1:
-            recent_history = parsed_messages[-7:-1] # Grab up to 6 previous messages excluding the current one
-            
+            recent_history = parsed_messages[-7:-1] 
             for msg in recent_history:
                 role = msg.get("role") or ("assistant" if msg.get("sender") == "assistant" else "user")
                 text = msg.get("content") or msg.get("text") or ""
-                
                 if text:
-                    # Hard-cap the length of past assistant messages. 
-                    # If it previously output a massive JSON string, this prevents it from blowing up the context window.
                     if role == "assistant" and len(text) > 500:
-                        text = text[:500] + "... [truncated for length to save tokens]"
-                        
-                    chat_history.append({"role": role, "content": text})
+                        text = text[:500] + "... [truncated]"
+                    raw_chat_history.append({"role": role, "content": text})
 
-        # Append the latest user message with the newly fetched verified links context
         if parsed_messages:
             last_msg = parsed_messages[-1]
             last_role = last_msg.get("role") or ("assistant" if last_msg.get("sender") == "assistant" else "user")
             last_text = last_msg.get("content") or last_msg.get("text") or ""
-            chat_history.append({
+            raw_chat_history.append({
                 "role": "user", 
                 "content": f"{last_text}{verified_links_context}"
             })
 
-        
+        # --- 3. FIX OPENROUTER ALTERNATING ROLES ---
+        chat_history = []
+        for msg in raw_chat_history:
+            if chat_history and chat_history[-1]["role"] == msg["role"]:
+                chat_history[-1]["content"] += f"\n\n{msg['content']}"
+            else:
+                chat_history.append(msg)
+        # -------------------------------------------
+
         try:
-            # raw_data is ALREADY a parsed dictionary here; do NOT call .strip() on it!
             raw_data = generate_with_fallback(
                 messages=chat_history, 
                 max_tokens=4000, 
